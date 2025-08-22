@@ -1,47 +1,90 @@
-const fs = require('fs');
-const path = require('path');
+const database = require('./database');
 
 class Logger {
     constructor() {
-        this.logsDir = path.join(process.cwd(), 'logs');
-        this.ensureLogDirectory();
+        this.logQueue = []; // Cola para logs en caso de error de BD
+        this.isProcessingQueue = false;
     }
 
-    ensureLogDirectory() {
-        if (!fs.existsSync(this.logsDir)) {
-            fs.mkdirSync(this.logsDir, { recursive: true });
-        }
-    }
-
-    log(type, message, userId = null) {
-        const timestamp = new Date().toISOString();
+    async log(role, message, userId = null, userName = null, response = null, supportUserId = null) {
+        const timestamp = new Date();
         const logEntry = {
-            timestamp,
-            type,
+            timestamp: timestamp.toISOString(),
+            role, // 'cliente', 'bot', 'soporte'
             userId,
-            message
+            userName,
+            message,
+            response,
+            supportUserId
         };
 
-        this.saveToFile(logEntry);
-        this.printToConsole(timestamp, type, message, userId);
+        // Solo guardar en BD y mostrar en consola
+        await this.saveToDB(logEntry);
+        this.printToConsole(logEntry.timestamp, role, message, userId);
     }
 
-    saveToFile(logEntry) {
-        const today = new Date().toISOString().split('T')[0];
-        const logFile = path.join(this.logsDir, `${today}.json`);
+    async saveToDB(logEntry) {
+        // Solo guardar en BD si hay un userId válido (logs de conversaciones)
+        if (!logEntry.userId) {
+            return; // Skip logs de sistema sin usuario
+        }
+        
+        try {
+            await database.insert('conversation_logs', {
+                timestamp: new Date(logEntry.timestamp),
+                user_id: logEntry.userId,
+                user_name: logEntry.userName,
+                message: logEntry.message,
+                response: logEntry.response,
+                role: logEntry.role,
+                support_user_id: logEntry.supportUserId,
+                session_id: null
+            });
+        } catch (error) {
+            console.error('Error guardando log en BD:', error);
+            // Agregar a cola para reintento posterior
+            this.logQueue.push(logEntry);
+            this.processLogQueue();
+        }
+    }
 
-        let logs = [];
-        if (fs.existsSync(logFile)) {
-            try {
-                logs = JSON.parse(fs.readFileSync(logFile, 'utf8'));
-            } catch (error) {
-                console.error('Error leyendo logs:', error);
-            }
+    async processLogQueue() {
+        if (this.isProcessingQueue || this.logQueue.length === 0) {
+            return;
         }
 
-        logs.push(logEntry);
-        fs.writeFileSync(logFile, JSON.stringify(logs, null, 2));
+        this.isProcessingQueue = true;
+        
+        while (this.logQueue.length > 0) {
+            const logEntry = this.logQueue.shift();
+            
+            // Skip logs sin userId
+            if (!logEntry.userId) {
+                continue;
+            }
+            
+            try {
+                await database.insert('conversation_logs', {
+                    timestamp: new Date(logEntry.timestamp),
+                    user_id: logEntry.userId,
+                    user_name: logEntry.userName,
+                    message: logEntry.message,
+                    response: logEntry.response,
+                    role: logEntry.role,
+                    support_user_id: logEntry.supportUserId,
+                    session_id: null
+                });
+            } catch (error) {
+                console.error('Error procesando cola de logs:', error);
+                // Volver a agregar a la cola si falla
+                this.logQueue.unshift(logEntry);
+                break;
+            }
+        }
+        
+        this.isProcessingQueue = false;
     }
+
 
     printToConsole(timestamp, type, message, userId) {
         const userInfo = userId ? ` (Usuario: ${userId})` : '';
@@ -61,32 +104,101 @@ class Logger {
         console.log(`${color} [${time}] ${type} ${colors.RESET} ${message}${userInfo}`);
     }
 
-    getLogs(date = null) {
-        const targetDate = date || new Date().toISOString().split('T')[0];
-        const logFile = path.join(this.logsDir, `${targetDate}.json`);
-        
-        if (fs.existsSync(logFile)) {
-            try {
-                return JSON.parse(fs.readFileSync(logFile, 'utf8'));
-            } catch (error) {
-                console.error('Error leyendo logs:', error);
-                return [];
-            }
-        }
-        return [];
-    }
-
-    getAvailableDates() {
+    async getLogs(date = null, limit = 1000, offset = 0) {
         try {
-            const files = fs.readdirSync(this.logsDir);
-            return files
-                .filter(file => file.endsWith('.json'))
-                .map(file => file.replace('.json', ''))
-                .sort((a, b) => b.localeCompare(a));
+            // Solo obtener de BD
+            let query = 'SELECT * FROM conversation_logs';
+            let params = [];
+            
+            if (date) {
+                query += ' WHERE DATE(timestamp) = ?';
+                params.push(date);
+            }
+            
+            query += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?';
+            params.push(limit, offset);
+            
+            const dbLogs = await database.query(query, params);
+            
+            return dbLogs.map(log => {
+                // Convertir roles a tipos esperados por el frontend
+                let type = 'BOT';
+                if (log.role === 'cliente') {
+                    type = 'USER';
+                } else if (log.role === 'bot') {
+                    type = 'BOT';
+                } else if (log.role === 'soporte' || log.role === 'HUMAN') {
+                    type = 'HUMAN';
+                } else if (log.role) {
+                    type = log.role.toUpperCase();
+                }
+                
+                return {
+                    timestamp: log.timestamp.toISOString(),
+                    type: type,
+                    role: log.role,
+                    userId: log.user_id,
+                    userName: log.user_name,
+                    message: log.message,
+                    response: log.response,
+                    supportUserId: log.support_user_id
+                };
+            });
         } catch (error) {
+            console.error('Error obteniendo logs de BD:', error);
             return [];
         }
     }
+
+    async getAvailableDates() {
+        try {
+            // Solo obtener fechas de la BD
+            const dates = await database.query(
+                'SELECT DISTINCT DATE(timestamp) as date FROM conversation_logs ORDER BY date DESC'
+            );
+            
+            return dates.map(row => row.date.toISOString().split('T')[0]);
+        } catch (error) {
+            console.error('Error obteniendo fechas de BD:', error);
+            return [];
+        }
+    }
+
+    async getStats(date = null) {
+        try {
+            let query = `
+                SELECT 
+                    COUNT(*) as total_messages,
+                    COUNT(DISTINCT user_id) as unique_users,
+                    SUM(CASE WHEN is_human_response = 1 THEN 1 ELSE 0 END) as human_responses,
+                    SUM(CASE WHEN is_human_response = 0 THEN 1 ELSE 0 END) as ai_responses
+                FROM conversation_logs
+            `;
+            let params = [];
+            
+            if (date) {
+                query += ' WHERE DATE(timestamp) = ?';
+                params.push(date);
+            }
+            
+            const stats = await database.query(query, params);
+            return stats[0] || {
+                total_messages: 0,
+                unique_users: 0,
+                human_responses: 0,
+                ai_responses: 0
+            };
+        } catch (error) {
+            console.error('Error obteniendo estadísticas:', error);
+            return {
+                total_messages: 0,
+                unique_users: 0,
+                human_responses: 0,
+                ai_responses: 0
+            };
+        }
+    }
+
 }
 
 module.exports = new Logger();

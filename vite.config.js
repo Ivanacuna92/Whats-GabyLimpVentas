@@ -10,13 +10,12 @@ export default defineConfig({
     emptyOutDir: true
   },
   server: {
-    port: 3001,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:3000',
-        changeOrigin: true
-      }
-    }
+    middlewareMode: true,
+    hmr: {
+      overlay: false
+    },
+    host: true,
+    allowedHosts: ['dcf66baefa9f.ngrok-free.app', '.ngrok-free.app', '.ngrok.io', 'localhost', '127.0.0.1']
   },
   resolve: {
     alias: {

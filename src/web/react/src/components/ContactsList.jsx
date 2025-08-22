@@ -7,17 +7,37 @@ function ContactsList({ contacts, setContacts, selectedContact, onSelectContact 
 
   useEffect(() => {
     loadContacts();
-    const interval = setInterval(loadContacts, 30000);
+    const interval = setInterval(loadContacts, 2000); // Actualizar cada 2 segundos para ver mensajes más rápido
     return () => clearInterval(interval);
-  }, []);
+  }, [selectedContact]);
 
   const loadContacts = async () => {
     try {
       const data = await fetchContacts();
+      // console.log('[ContactsList] Loaded contacts:', data); // DEBUG
       setContacts(data);
+      
+      // Si hay un contacto seleccionado, actualizar sus mensajes
+      if (selectedContact) {
+        const updatedContact = data.find(c => c.phone === selectedContact.phone);
+        if (updatedContact) {
+          // Comparar la cantidad de mensajes o el último mensaje
+          const hasNewMessages = 
+            updatedContact.messages.length !== selectedContact.messages.length ||
+            (updatedContact.messages.length > 0 && selectedContact.messages.length > 0 &&
+             updatedContact.messages[updatedContact.messages.length - 1].timestamp !== 
+             selectedContact.messages[selectedContact.messages.length - 1].timestamp);
+          
+          if (hasNewMessages) {
+            // console.log('[ContactsList] Contact has new messages, updating:', updatedContact); // DEBUG
+            onSelectContact(updatedContact);
+          }
+        }
+      }
+      
       setLoading(false);
     } catch (error) {
-      console.error('Error cargando contactos:', error);
+      // Error silencioso
       setLoading(false);
     }
   };
@@ -29,13 +49,19 @@ function ContactsList({ contacts, setContacts, selectedContact, onSelectContact 
         c.phone === phone ? { ...c, isHumanMode: isHuman } : c
       ));
     } catch (error) {
-      console.error('Error cambiando modo:', error);
+      // Error silencioso
     }
   };
 
-  const filteredContacts = contacts.filter(contact =>
-    contact.phone.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredContacts = contacts
+    .filter(contact => contact.phone.toLowerCase().includes(searchTerm.toLowerCase()))
+    .sort((a, b) => {
+      // Primero los de soporte (prioridad máxima)
+      if (a.mode === 'support' && b.mode !== 'support') return -1;
+      if (a.mode !== 'support' && b.mode === 'support') return 1;
+      // Luego por última actividad
+      return new Date(b.lastActivity) - new Date(a.lastActivity);
+    });
 
   if (loading) {
     return <div className="w-96 bg-white border-r border-gray-200 flex items-center justify-center">
@@ -46,13 +72,13 @@ function ContactsList({ contacts, setContacts, selectedContact, onSelectContact 
   return (
     <div className="w-96 bg-white border-r border-gray-200 flex flex-col">
       <div className="p-6 border-b border-gray-200">
-        <h2 className="text-lg font-light text-black mb-4">CONTACTOS</h2>
+        <h2 className="text-lg font-light text-navetec-primary mb-4">CONTACTOS</h2>
         <input
           type="text"
           placeholder="Buscar..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full px-4 py-2 rounded-md border border-gray-300 focus:outline-none focus:border-black"
+          className="w-full px-4 py-2 rounded-md border border-gray-300 focus:outline-none focus:border-navetec-primary"
         />
       </div>
       
@@ -63,32 +89,68 @@ function ContactsList({ contacts, setContacts, selectedContact, onSelectContact 
           filteredContacts.map(contact => (
             <div
               key={contact.phone}
-              className={`flex items-center p-4 border-b border-gray-100 cursor-pointer transition-all hover:bg-gray-50 ${
-                selectedContact?.phone === contact.phone ? 'bg-gray-100 border-l-4 border-black' : ''
+              className={`flex items-center p-4 border-b cursor-pointer transition-all ${
+                contact.mode === 'support' 
+                  ? 'bg-orange-50 border-orange-200 hover:bg-orange-100' 
+                  : selectedContact?.phone === contact.phone 
+                    ? 'bg-gray-100 border-gray-100 border-l-4' 
+                    : 'border-gray-100 hover:bg-gray-50'
               }`}
+              style={{
+                borderLeftColor: contact.mode === 'support' 
+                  ? '#EA580C'
+                  : selectedContact?.phone === contact.phone 
+                    ? '#00567D'
+                    : 'transparent',
+                borderLeftWidth: contact.mode === 'support' ? '4px' : selectedContact?.phone === contact.phone ? '4px' : '0'
+              }}
               onClick={() => onSelectContact(contact)}
             >
-              <div className="w-10 h-10 rounded-full bg-black flex items-center justify-center text-white text-sm mr-4">
-                {contact.phone.slice(-2)}
+              <div className="relative mr-4">
+                <div 
+                  className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm"
+                  style={{ 
+                    backgroundColor: contact.mode === 'support' ? '#EA580C' : '#00567D' 
+                  }}
+                >
+                  {contact.mode === 'support' ? '👤' : contact.phone.slice(-2)}
+                </div>
+                {contact.mode === 'support' && (
+                  <div className="absolute -top-1 -right-1 w-2 h-2 bg-orange-600 rounded-full animate-pulse"></div>
+                )}
               </div>
               <div className="flex-1">
-                <div className="font-medium text-black">{contact.phone}</div>
-                <div className="text-sm text-gray-500 truncate">
+                <div className="flex items-center gap-2">
+                  <div className={`font-medium ${contact.mode === 'support' ? 'text-orange-700' : 'text-navetec-primary'}`}>
+                    {contact.phone}
+                  </div>
+                  {contact.mode === 'support' && (
+                    <span className="text-xs bg-orange-600 text-white px-2 py-0.5 rounded">
+                      Soporte
+                    </span>
+                  )}
+                </div>
+                <div className={`text-sm truncate ${contact.mode === 'support' ? 'text-orange-600' : 'text-gray-500'}`}>
                   {contact.lastMessage?.text.substring(0, 30)}...
                 </div>
               </div>
               <button
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
-                  contact.isHumanMode 
-                    ? 'bg-black text-white' 
-                    : 'bg-white text-black border border-black'
-                }`}
+                className="px-3 py-1 rounded-md text-xs font-medium transition-all"
+                style={{
+                  backgroundColor: contact.mode === 'support' 
+                    ? '#EA580C' 
+                    : contact.isHumanMode 
+                      ? '#00567D' 
+                      : 'white',
+                  color: contact.mode === 'support' || contact.isHumanMode ? 'white' : '#00567D',
+                  border: contact.mode === 'support' || contact.isHumanMode ? 'none' : '1px solid #00567D'
+                }}
                 onClick={(e) => {
                   e.stopPropagation();
                   handleToggleMode(contact.phone, !contact.isHumanMode);
                 }}
               >
-                {contact.isHumanMode ? 'HUMANO' : 'IA'}
+                {contact.mode === 'support' ? 'SOPORTE' : contact.isHumanMode ? 'HUMANO' : 'IA'}
               </button>
             </div>
           ))

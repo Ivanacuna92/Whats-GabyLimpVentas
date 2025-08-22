@@ -17,7 +17,7 @@ function Dashboard() {
   const loadDates = async () => {
     try {
       const dates = await fetchDates();
-      setAvailableDates(dates);
+      setAvailableDates(Array.isArray(dates) ? dates : []);
       if (dates.length > 0 && !selectedDate) {
         setSelectedDate(dates[0]);
       }
@@ -49,11 +49,11 @@ function Dashboard() {
   return (
     <div className="p-8 max-w-7xl mx-auto">
       <div className="flex justify-between items-center mb-8">
-        <h2 className="text-3xl font-light text-black">Panel de Control</h2>
+        <h2 className="text-3xl font-light text-navetec-primary">Panel de Control</h2>
         <select 
           value={selectedDate} 
           onChange={(e) => setSelectedDate(e.target.value)}
-          className="px-4 py-2 rounded-md border border-gray-300 bg-white text-black focus:outline-none focus:border-black"
+          className="px-4 py-2 rounded-md border border-gray-300 bg-white text-navetec-primary focus:outline-none focus:border-navetec-primary"
         >
           <option value="">Hoy</option>
           {availableDates.map(date => (
@@ -90,12 +90,12 @@ function Dashboard() {
       </div>
 
       <div className="bg-white rounded-lg border border-gray-200 p-6 mb-8">
-        <h3 className="text-xl font-light text-black mb-6">Actividad por Hora</h3>
+        <h3 className="text-xl font-light text-navetec-primary mb-6">Actividad por Hora</h3>
         <div className="flex items-end h-48 gap-1">
           {Object.entries(stats?.messagesByHour || {}).map(([hour, count]) => (
             <div key={hour} className="flex-1 flex flex-col items-center">
               <div 
-                className="w-full bg-black hover:bg-gray-800 transition-all"
+                className="w-full bg-navetec-primary hover:bg-navetec-primary-dark transition-all"
                 style={{ 
                   height: `${(count / Math.max(...Object.values(stats?.messagesByHour || {1: 1}))) * 100}%` 
                 }}
@@ -128,16 +128,16 @@ function Dashboard() {
 
 function StatCard({ title, value }) {
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6 hover:border-black transition-all">
+    <div className="bg-white rounded-lg border border-gray-200 p-6 hover:border-navetec-primary transition-all">
       <h3 className="text-xs text-gray-600 uppercase tracking-wider mb-2">{title}</h3>
-      <p className="text-2xl font-light text-black">{value}</p>
+      <p className="text-2xl font-light text-navetec-primary">{value}</p>
     </div>
   );
 }
 
 function InsightCard({ title, value }) {
   return (
-    <div className="bg-black rounded-lg text-white p-6">
+    <div className="bg-navetec-primary rounded-lg text-white p-6">
       <h4 className="text-xs uppercase tracking-wider mb-2 opacity-70">{title}</h4>
       <p className="text-3xl font-light">{value}</p>
     </div>

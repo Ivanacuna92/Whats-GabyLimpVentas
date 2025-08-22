@@ -66,25 +66,23 @@ class WhatsAppBot {
         const userId = contact.id.user;
         const userName = contact.name || contact.pushname || userId;
         
-        // Solo responder al número autorizado
-        if (userId !== '5213332248353') {
-            console.log(`Mensaje ignorado de ${userId} - Solo respondo a 521333224835`);
-            return;
-        }
         
+        await logger.log('cliente', message.body, userId, userName);
         
-        logger.log('USER', `${userName}: ${message.body}`, userId);
+        // Verificar si está en modo humano o soporte
+        const isHuman = await humanModeManager.isHumanMode(userId);
+        const isSupport = await humanModeManager.isSupportMode(userId);
         
-        // Verificar si está en modo humano
-        if (humanModeManager.isHumanMode(userId)) {
-            logger.log('SYSTEM', `Mensaje ignorado - Modo HUMANO activo para ${userName} (${userId})`, userId);
-            return; // No responder automáticamente cuando está en modo humano
+        if (isHuman || isSupport) {
+            const mode = isSupport ? 'SOPORTE' : 'HUMANO';
+            await logger.log('SYSTEM', `Mensaje ignorado - Modo ${mode} activo para ${userName} (${userId})`);
+            return; // No responder automáticamente cuando está en modo humano o soporte
         }
         
         try {
             const response = await this.processMessage(userId, message.body, chat.id._serialized);
             await message.reply(response);
-            logger.log('BOT', response, userId);
+            await logger.log('bot', response, userId, userName);
         } catch (error) {
             await this.handleError(error, message, userId);
         }
@@ -92,19 +90,37 @@ class WhatsAppBot {
 
     async processMessage(userId, userMessage, chatId) {
         // Agregar mensaje del usuario a la sesión
-        sessionManager.addMessage(userId, 'user', userMessage, chatId);
+        await sessionManager.addMessage(userId, 'user', userMessage, chatId);
         
         // Preparar mensajes para la IA
         const messages = [
             { role: 'system', content: this.systemPrompt },
-            ...sessionManager.getMessages(userId, chatId)
+            ...(await sessionManager.getMessages(userId, chatId))
         ];
         
         // Generar respuesta con IA
         const aiResponse = await aiService.generateResponse(messages);
         
+        // Verificar si la respuesta contiene el marcador de activar soporte
+        if (aiResponse.includes('{{ACTIVAR_SOPORTE}}')) {
+            // Remover el marcador de la respuesta (es invisible para el usuario)
+            const cleanResponse = aiResponse.replace('{{ACTIVAR_SOPORTE}}', '').trim();
+            
+            // Activar modo soporte
+            await humanModeManager.setMode(userId, 'support');
+            await sessionManager.updateSessionMode(userId, chatId, 'support');
+            
+            // Agregar respuesta limpia a la sesión
+            await sessionManager.addMessage(userId, 'assistant', cleanResponse, chatId);
+            
+            // Registrar en logs que se activó el modo soporte
+            await logger.log('SYSTEM', `Modo SOPORTE activado automáticamente para ${userId}`);
+            
+            return cleanResponse;
+        }
+        
         // Agregar respuesta de IA a la sesión
-        sessionManager.addMessage(userId, 'assistant', aiResponse, chatId);
+        await sessionManager.addMessage(userId, 'assistant', aiResponse, chatId);
         
         return aiResponse;
     }

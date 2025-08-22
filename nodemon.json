@@ -1,0 +1,17 @@
+{
+  "ignore": [
+    "logs/*",
+    "data/*",
+    "dist/*",
+    "src/web/react/*",
+    "node_modules/*",
+    ".git/*",
+    "*.log"
+  ],
+  "watch": [
+    "index.js",
+    "src/**/*.js"
+  ],
+  "ext": "js,json",
+  "delay": "1000"
+}
