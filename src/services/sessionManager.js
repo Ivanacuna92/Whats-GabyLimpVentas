@@ -143,7 +143,7 @@ class SessionManager {
         return 'ai';
     }
 
-    async checkInactiveSessions(client) {
+    async checkInactiveSessions(sock) {
         const now = Date.now();
         
         // Verificar sesiones en cache local
@@ -160,10 +160,10 @@ class SessionManager {
                 // Enviar mensaje de finalización
                 const endMessage = '⏰ Tu sesión de conversación ha finalizado por inactividad. Puedes escribirme nuevamente para iniciar una nueva conversación.';
                 
-                if (session.chatId && client) {
+                if (session.chatId && sock) {
                     try {
-                        const chat = await client.getChatById(session.chatId);
-                        await chat.sendMessage(endMessage);
+                        // Con Baileys, enviamos directamente al chatId
+                        await sock.sendMessage(session.chatId, { text: endMessage });
                         // Registrar el mensaje de finalización en los logs
                         await logger.log('BOT', endMessage, userId);
                     } catch (error) {
@@ -186,9 +186,9 @@ class SessionManager {
         }
     }
 
-    startCleanupTimer(client) {
+    startCleanupTimer(sock) {
         setInterval(() => {
-            this.checkInactiveSessions(client);
+            this.checkInactiveSessions(sock);
         }, config.checkInterval);
     }
     

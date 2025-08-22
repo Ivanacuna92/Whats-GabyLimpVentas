@@ -1,5 +1,7 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const makeWASocket = require('@whiskeysockets/baileys').default;
+const { DisconnectReason, useMultiFileAuthState, makeCacheableSignalKeyStore } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
+const pino = require('pino');
 const config = require('../config/config');
 const logger = require('../services/logger');
 const aiService = require('../services/aiService');
@@ -9,85 +11,111 @@ const humanModeManager = require('../services/humanModeManager');
 
 class WhatsAppBot {
     constructor() {
-        this.client = new Client({
-            authStrategy: new LocalAuth(),
-            puppeteer: {
-                headless: true, // Modo sin ventana (solo terminal)
-                args: ['--no-sandbox', '--disable-setuid-sandbox']
+        this.sock = null;
+        this.systemPrompt = promptLoader.getPrompt();
+        this.store = null;
+    }
+
+    async start() {
+        console.log('Iniciando bot de WhatsApp con Baileys...');
+        config.validateApiKey();
+        
+        // Configurar autenticación multi-archivo
+        const { state, saveCreds } = await useMultiFileAuthState('./auth_baileys');
+        
+        // Crear socket de WhatsApp
+        this.sock = makeWASocket({
+            auth: {
+                creds: state.creds,
+                keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
+            },
+            printQRInTerminal: false,
+            logger: pino({ level: 'silent' }),
+            browser: ['WhatsBot', 'Chrome', '1.0.0']
+        });
+        
+        // Guardar credenciales cuando se actualicen
+        this.sock.ev.on('creds.update', saveCreds);
+        
+        // Manejar actualizaciones de conexión
+        this.sock.ev.on('connection.update', (update) => {
+            const { connection, lastDisconnect, qr } = update;
+            
+            if (qr) {
+                console.log('Escanea este código QR con WhatsApp:');
+                qrcode.generate(qr, { small: true });
+            }
+            
+            if (connection === 'close') {
+                const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+                console.log('Conexión cerrada debido a', lastDisconnect?.error, ', reconectando:', shouldReconnect);
+                
+                if (shouldReconnect) {
+                    setTimeout(() => this.start(), 5000);
+                }
+            } else if (connection === 'open') {
+                console.log('¡Bot de WhatsApp conectado y listo!');
+                logger.log('SYSTEM', 'Bot iniciado correctamente con Baileys');
+                sessionManager.startCleanupTimer(this.sock);
             }
         });
         
-        this.systemPrompt = promptLoader.getPrompt();
-        this.setupEventHandlers();
+        // Manejar mensajes entrantes
+        this.sock.ev.on('messages.upsert', async (m) => {
+            try {
+                const msg = m.messages[0];
+                if (!msg.message) return;
+                
+                // Ignorar mensajes propios
+                if (msg.key.fromMe) return;
+                
+                // Obtener el número del remitente
+                const from = msg.key.remoteJid;
+                const isGroup = from.endsWith('@g.us');
+                
+                // Solo responder a mensajes privados
+                if (isGroup) return;
+                
+                // Obtener el texto del mensaje
+                const conversation = msg.message.conversation || 
+                                   msg.message.extendedTextMessage?.text || 
+                                   '';
+                
+                // Ignorar mensajes sin texto
+                if (!conversation || conversation.trim() === '') {
+                    console.log('Mensaje ignorado - Sin contenido de texto');
+                    return;
+                }
+                
+                // Extraer información del usuario
+                const userId = from.replace('@s.whatsapp.net', '');
+                const userName = msg.pushName || userId;
+                
+                await logger.log('cliente', conversation, userId, userName);
+                
+                // Verificar si está en modo humano o soporte
+                const isHuman = await humanModeManager.isHumanMode(userId);
+                const isSupport = await humanModeManager.isSupportMode(userId);
+                
+                if (isHuman || isSupport) {
+                    const mode = isSupport ? 'SOPORTE' : 'HUMANO';
+                    await logger.log('SYSTEM', `Mensaje ignorado - Modo ${mode} activo para ${userName} (${userId})`);
+                    return;
+                }
+                
+                // Procesar mensaje y generar respuesta
+                const response = await this.processMessage(userId, conversation, from);
+                
+                // Enviar respuesta
+                await this.sock.sendMessage(from, { text: response });
+                await logger.log('bot', response, userId, userName);
+                
+            } catch (error) {
+                await this.handleError(error, m.messages[0]);
+            }
+        });
     }
-
-    setupEventHandlers() {
-        this.client.on('qr', this.handleQR.bind(this));
-        this.client.on('ready', this.handleReady.bind(this));
-        this.client.on('message_create', this.handleMessage.bind(this));
-        this.client.on('disconnected', this.handleDisconnected.bind(this));
-    }
-
-    handleQR(qr) {
-        console.log('Escanea este código QR con WhatsApp:');
-        qrcode.generate(qr, { small: true });
-    }
-
-    handleReady() {
-        console.log('¡Bot de WhatsApp conectado y listo!');
-        logger.log('SYSTEM', 'Bot iniciado correctamente');
-        sessionManager.startCleanupTimer(this.client);
-    }
-
-    async handleMessage(message) {
-        // Ignorar mensajes propios
-        if (message.fromMe) return;
-        
-        // Ignorar mensajes que no son texto
-        if (message.type !== 'chat') {
-            console.log(`Mensaje ignorado - Tipo no soportado: ${message.type} (solo acepto texto)`);
-            return;
-        }
-        
-        // Ignorar mensajes sin contenido de texto
-        if (!message.body || message.body.trim() === '') {
-            console.log('Mensaje ignorado - Sin contenido de texto');
-            return;
-        }
-        
-        // Obtener información del chat
-        const chat = await message.getChat();
-        
-        // Solo responder a mensajes privados
-        if (chat.isGroup) return;
-        
-        // Obtener información del contacto
-        const contact = await message.getContact();
-        const userId = contact.id.user;
-        const userName = contact.name || contact.pushname || userId;
-        
-        
-        await logger.log('cliente', message.body, userId, userName);
-        
-        // Verificar si está en modo humano o soporte
-        const isHuman = await humanModeManager.isHumanMode(userId);
-        const isSupport = await humanModeManager.isSupportMode(userId);
-        
-        if (isHuman || isSupport) {
-            const mode = isSupport ? 'SOPORTE' : 'HUMANO';
-            await logger.log('SYSTEM', `Mensaje ignorado - Modo ${mode} activo para ${userName} (${userId})`);
-            return; // No responder automáticamente cuando está en modo humano o soporte
-        }
-        
-        try {
-            const response = await this.processMessage(userId, message.body, chat.id._serialized);
-            await message.reply(response);
-            await logger.log('bot', response, userId, userName);
-        } catch (error) {
-            await this.handleError(error, message, userId);
-        }
-    }
-
+    
     async processMessage(userId, userMessage, chatId) {
         // Agregar mensaje del usuario a la sesión
         await sessionManager.addMessage(userId, 'user', userMessage, chatId);
@@ -103,7 +131,7 @@ class WhatsAppBot {
         
         // Verificar si la respuesta contiene el marcador de activar soporte
         if (aiResponse.includes('{{ACTIVAR_SOPORTE}}')) {
-            // Remover el marcador de la respuesta (es invisible para el usuario)
+            // Remover el marcador de la respuesta
             const cleanResponse = aiResponse.replace('{{ACTIVAR_SOPORTE}}', '').trim();
             
             // Activar modo soporte
@@ -113,7 +141,7 @@ class WhatsAppBot {
             // Agregar respuesta limpia a la sesión
             await sessionManager.addMessage(userId, 'assistant', cleanResponse, chatId);
             
-            // Registrar en logs que se activó el modo soporte
+            // Registrar en logs
             await logger.log('SYSTEM', `Modo SOPORTE activado automáticamente para ${userId}`);
             
             return cleanResponse;
@@ -124,9 +152,12 @@ class WhatsAppBot {
         
         return aiResponse;
     }
-
-    async handleError(error, message, userId) {
+    
+    async handleError(error, message) {
         console.error('Error procesando mensaje:', error);
+        
+        const from = message.key.remoteJid;
+        const userId = from.replace('@s.whatsapp.net', '');
         
         let errorMessage = 'Lo siento, ocurrió un error. Inténtalo de nuevo.';
         
@@ -134,24 +165,19 @@ class WhatsAppBot {
             errorMessage = 'Error de configuración del bot. Por favor, contacta al administrador.';
         }
         
-        await message.reply(errorMessage);
-        logger.log('ERROR', error.message, userId);
+        try {
+            await this.sock.sendMessage(from, { text: errorMessage });
+            logger.log('ERROR', error.message, userId);
+        } catch (sendError) {
+            console.error('Error enviando mensaje de error:', sendError);
+        }
     }
-
-    handleDisconnected(reason) {
-        console.log('Cliente desconectado:', reason);
-        logger.log('SYSTEM', `Bot desconectado: ${reason}`);
-    }
-
-    async start() {
-        console.log('Iniciando bot de WhatsApp...');
-        config.validateApiKey();
-        await this.client.initialize();
-    }
-
+    
     async stop() {
         console.log('Cerrando bot...');
-        await this.client.destroy();
+        if (this.sock) {
+            this.sock.end();
+        }
     }
 }
 
