@@ -11,8 +11,16 @@ class HumanModeManager {
             // Cargar todos los estados desde la BD al iniciar
             const states = await database.findAll('human_mode_states');
             states.forEach(state => {
+                // Usar la columna 'mode' si existe, sino usar is_human_mode
+                let mode = false;
+                if (state.mode) {
+                    mode = state.mode === 'ai' ? false : state.mode;
+                } else if (state.is_human_mode) {
+                    mode = 'human';
+                }
+                
                 this.localCache.set(state.contact_id, {
-                    mode: state.is_human_mode ? 'human' : false,
+                    mode: mode,
                     activatedAt: state.activated_at,
                     activatedBy: state.activated_by
                 });
@@ -47,6 +55,7 @@ class HumanModeManager {
                 await database.update('human_mode_states',
                     {
                         is_human_mode: isHumanMode,
+                        mode: mode || 'ai',
                         activated_at: isHumanMode ? new Date() : null,
                         activated_by: isHumanMode ? activatedBy : null,
                         updated_at: new Date()
@@ -58,6 +67,7 @@ class HumanModeManager {
                 await database.insert('human_mode_states', {
                     contact_id: phone,
                     is_human_mode: isHumanMode,
+                    mode: mode || 'ai',
                     activated_at: isHumanMode ? new Date() : null,
                     activated_by: isHumanMode ? activatedBy : null
                 });
@@ -114,7 +124,14 @@ class HumanModeManager {
         try {
             const dbState = await database.findOne('human_mode_states', 'contact_id = ?', [phone]);
             if (dbState) {
-                const mode = dbState.is_human_mode ? 'human' : false;
+                // Usar la columna 'mode' si existe
+                let mode = false;
+                if (dbState.mode && dbState.mode !== 'ai') {
+                    mode = dbState.mode;
+                } else if (dbState.is_human_mode) {
+                    mode = 'human';
+                }
+                
                 this.localCache.set(phone, {
                     mode: mode,
                     activatedAt: dbState.activated_at,
@@ -136,12 +153,19 @@ class HumanModeManager {
             const result = {};
             
             states.forEach(state => {
-                result[state.contact_id] = state.is_human_mode ? 'human' : false;
+                // Usar la columna 'mode' si existe
+                if (state.mode && state.mode !== 'ai') {
+                    result[state.contact_id] = state.mode;
+                } else if (state.is_human_mode) {
+                    result[state.contact_id] = 'human';
+                } else {
+                    result[state.contact_id] = false;
+                }
             });
             
-            // Luego sobrescribir con cache local (que tiene los valores más actuales incluyendo 'support')
+            // Luego sobrescribir con cache local (que tiene los valores más actuales)
             this.localCache.forEach((value, key) => {
-                if (value.mode) {
+                if (value.mode !== undefined) {
                     result[key] = value.mode;
                 }
             });
