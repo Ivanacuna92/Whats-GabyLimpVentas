@@ -414,19 +414,19 @@ class WebServer {
                 }
                 
                 // Verificar si hay una instancia activa del bot
-                if (!global.whatsappBot || !global.whatsappBot.client) {
+                if (!global.whatsappBot || !global.whatsappBot.sock) {
                     return res.status(503).json({ 
                         error: 'WhatsApp bot not available',
                         details: 'El bot de WhatsApp no está conectado'
                     });
                 }
                 
-                // Formatear el número de teléfono para WhatsApp
-                const formattedPhone = phone.includes('@') ? phone : `${phone}@c.us`;
+                // Formatear el número de teléfono para WhatsApp (Baileys usa @s.whatsapp.net)
+                const formattedPhone = phone.includes('@') ? phone : `${phone}@s.whatsapp.net`;
                 
                 // Enviar mensaje de finalización
                 const endMessage = '⏰ Tu sesión de conversación ha finalizado. Puedes escribirme nuevamente para iniciar una nueva conversación.';
-                await global.whatsappBot.client.sendMessage(formattedPhone, endMessage);
+                await global.whatsappBot.sock.sendMessage(formattedPhone, { text: endMessage });
                 
                 // Registrar el mensaje de finalización en los logs como mensaje del BOT
                 logger.log('BOT', endMessage, phone);
@@ -476,23 +476,23 @@ class WebServer {
                     });
                 }
                 
-                if (!global.whatsappBot.client) {
+                if (!global.whatsappBot.sock) {
                     return res.status(503).json({ 
                         error: 'WhatsApp client not connected',
                         details: 'El cliente de WhatsApp no está conectado. Por favor, escanee el código QR.'
                     });
                 }
                 
-                // Formatear el número de teléfono para WhatsApp
-                const formattedPhone = phone.includes('@') ? phone : `${phone}@c.us`;
+                // Formatear el número de teléfono para WhatsApp (Baileys usa @s.whatsapp.net)
+                const formattedPhone = phone.includes('@') ? phone : `${phone}@s.whatsapp.net`;
                 
                 // Enviar mensaje através del cliente de WhatsApp
-                await global.whatsappBot.client.sendMessage(formattedPhone, message);
+                await global.whatsappBot.sock.sendMessage(formattedPhone, { text: message });
                 
                 // Registrar el mensaje enviado por el humano con el nombre del usuario
                 const senderName = req.user ? req.user.name : 'Soporte';
                 // Usar 'soporte' como role para la base de datos
-                await logger.log('soporte', message, phone.replace('@c.us', ''), senderName);
+                await logger.log('soporte', message, phone.replace('@s.whatsapp.net', ''), senderName);
                 
                 res.json({ 
                     success: true, 
