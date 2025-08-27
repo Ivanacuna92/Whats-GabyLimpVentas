@@ -49,6 +49,9 @@ class HumanModeManager {
         
         // Actualizar en base de datos
         try {
+            // Primero verificar si la columna 'mode' existe
+            await this.ensureModeColumn();
+            
             const existingState = await database.findOne('human_mode_states', 'contact_id = ?', [phone]);
             
             if (existingState) {
@@ -77,6 +80,27 @@ class HumanModeManager {
             console.log(`Modo ${modeText} establecido para ${phone}`);
         } catch (error) {
             console.error('Error actualizando modo en BD:', error);
+        }
+    }
+
+    async ensureModeColumn() {
+        try {
+            // Intentar agregar la columna 'mode' si no existe
+            await database.query(`
+                ALTER TABLE human_mode_states 
+                ADD COLUMN IF NOT EXISTS mode VARCHAR(20) DEFAULT 'ai'
+            `);
+            
+            // Agregar índice si no existe
+            await database.query(`
+                ALTER TABLE human_mode_states 
+                ADD INDEX IF NOT EXISTS idx_mode (mode)
+            `);
+        } catch (error) {
+            // Ignorar errores si la columna ya existe
+            if (!error.message.includes('Duplicate column name')) {
+                console.error('Error agregando columna mode:', error);
+            }
         }
     }
 
@@ -245,8 +269,16 @@ class HumanModeManager {
         try {
             const states = await database.findAll('human_mode_states');
             states.forEach(state => {
+                // Usar la columna 'mode' si existe, sino usar is_human_mode
+                let mode = false;
+                if (state.mode) {
+                    mode = state.mode === 'ai' ? false : state.mode;
+                } else if (state.is_human_mode) {
+                    mode = 'human';
+                }
+                
                 this.localCache.set(state.contact_id, {
-                    mode: state.is_human_mode ? 'human' : false,
+                    mode: mode,
                     activatedAt: state.activated_at,
                     activatedBy: state.activated_by
                 });

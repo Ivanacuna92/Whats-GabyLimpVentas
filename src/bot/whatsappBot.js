@@ -66,8 +66,14 @@ class WhatsAppBot {
                 const msg = m.messages[0];
                 if (!msg.message) return;
                 
+                // Log para debugging
+                console.log('Mensaje recibido - fromMe:', msg.key.fromMe, 'remoteJid:', msg.key.remoteJid);
+                
                 // Ignorar mensajes propios
-                if (msg.key.fromMe) return;
+                if (msg.key.fromMe) {
+                    console.log('Ignorando mensaje propio');
+                    return;
+                }
                 
                 // Obtener el número del remitente
                 const from = msg.key.remoteJid;

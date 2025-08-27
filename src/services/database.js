@@ -23,7 +23,10 @@ class Database {
                 connectionLimit: 10,
                 queueLimit: 0,
                 enableKeepAlive: true,
-                keepAliveInitialDelay: 0
+                keepAliveInitialDelay: 0,
+                acquireTimeout: 60000,
+                timeout: 60000,
+                reconnect: true
             });
 
             // Verificar la conexión

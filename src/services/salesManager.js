@@ -18,6 +18,9 @@ class SalesManager {
                     objections: JSON.parse(sale.objections || '[]'),
                     next_action: sale.next_action,
                     notes: sale.notes,
+                    posibleVenta: sale.posible_venta === 1,
+                    analizadoIA: sale.analizado_ia === 1,
+                    citaAgendada: sale.cita_agendada === 1,
                     last_interaction: sale.last_interaction,
                     created_at: sale.created_at
                 });
@@ -33,6 +36,63 @@ class SalesManager {
         const dateStr = date || new Date().toISOString().split('T')[0];
         const phoneClean = phone.replace(/[^0-9]/g, '');
         return `${phoneClean}_${dateStr}`;
+    }
+
+    async setSaleStatus(conversationId, data) {
+        try {
+            // El conversationId es phone_date
+            const [phone] = conversationId.split('_');
+            
+            console.log(`Guardando en BD para ${phone}:`, {
+                posibleVenta: data.posibleVenta,
+                analizadoIA: true,
+                citaAgendada: data.citaAgendada
+            });
+            
+            // Buscar o crear registro en BD
+            const existing = await database.findOne('sales_status', 'user_id = ?', [phone]);
+            
+            if (existing) {
+                // Actualizar registro existente
+                const updateResult = await database.update('sales_status', {
+                    posible_venta: data.posibleVenta ? 1 : 0,
+                    analizado_ia: 1, // Siempre 1 cuando se analiza con IA
+                    cita_agendada: data.citaAgendada ? 1 : 0,
+                    notes: data.notas || existing.notes,
+                    last_interaction: new Date()
+                }, 'user_id = ?', [phone]);
+                console.log('✅ Registro actualizado en BD:', updateResult);
+            } else {
+                // Crear nuevo registro
+                const insertResult = await database.insert('sales_status', {
+                    user_id: phone,
+                    stage: 'analyzed',
+                    interest_level: data.posibleVenta ? 5 : 0,
+                    posible_venta: data.posibleVenta ? 1 : 0,
+                    analizado_ia: 1, // Siempre 1 cuando se analiza con IA
+                    cita_agendada: data.citaAgendada ? 1 : 0,
+                    products_interested: '[]',
+                    objections: '[]',
+                    next_action: '',
+                    notes: data.notas || ''
+                });
+                console.log('✅ Nuevo registro creado en BD:', insertResult);
+            }
+
+            // Actualizar cache local
+            this.localCache.set(phone, {
+                ...this.localCache.get(phone),
+                posibleVenta: data.posibleVenta,
+                analizadoIA: true,
+                citaAgendada: data.citaAgendada,
+                notas: data.notas
+            });
+
+            return { success: true, saved: true };
+        } catch (error) {
+            console.error('❌ Error guardando estado de venta en BD:', error);
+            throw error;
+        }
     }
 
     async updateSaleStatus(userId, data) {
@@ -95,13 +155,23 @@ class SalesManager {
 
     async getSaleStatus(userId) {
         try {
+            // Si el userId viene como conversationId (phone_date), extraer el phone
+            const phone = userId.includes('_') ? userId.split('_')[0] : userId;
+            
             // Verificar cache local primero
-            if (this.localCache.has(userId)) {
-                return this.localCache.get(userId);
+            if (this.localCache.has(phone)) {
+                const cached = this.localCache.get(phone);
+                return {
+                    ...cached,
+                    posibleVenta: cached.posibleVenta || cached.posible_venta || false,
+                    analizadoIA: cached.analizadoIA || cached.analizado_ia || false,
+                    ventaCerrada: cached.analizadoIA || cached.analizado_ia || false, // Mantener compatibilidad
+                    citaAgendada: cached.citaAgendada || cached.cita_agendada || false
+                };
             }
             
             // Buscar en BD
-            const dbData = await database.findOne('sales_status', 'user_id = ?', [userId]);
+            const dbData = await database.findOne('sales_status', 'user_id = ?', [phone]);
             if (dbData) {
                 const saleData = {
                     stage: dbData.stage,
@@ -109,6 +179,10 @@ class SalesManager {
                     products_interested: JSON.parse(dbData.products_interested || '[]'),
                     objections: JSON.parse(dbData.objections || '[]'),
                     next_action: dbData.next_action,
+                    posibleVenta: dbData.posible_venta === 1,
+                    analizadoIA: dbData.analizado_ia === 1,
+                    ventaCerrada: dbData.analizado_ia === 1, // Mantener compatibilidad
+                    citaAgendada: dbData.cita_agendada === 1,
                     notes: dbData.notes,
                     last_interaction: dbData.last_interaction,
                     created_at: dbData.created_at

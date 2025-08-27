@@ -2,11 +2,13 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const cookieParser = require('cookie-parser');
+const multer = require('multer');
 const logger = require('../services/logger');
 const humanModeManager = require('../services/humanModeManager');
 const salesManager = require('../services/salesManager');
 const conversationAnalyzer = require('../services/conversationAnalyzer');
 const authService = require('../services/authService');
+const csvService = require('../services/csvService');
 const { requireAuth, requireAdmin, requireSupportOrAdmin } = require('../middleware/auth');
 const ViteExpress = require('vite-express');
 
@@ -230,8 +232,48 @@ class WebServer {
         // API endpoint para obtener reportes con información de ventas
         this.app.get('/api/reports/:date?', async (req, res) => {
             try {
-                const date = req.params.date || new Date().toISOString().split('T')[0];
-                const logs = await logger.getLogs(date);
+                let dateParam = req.params.date || 'all';
+                let logs = [];
+                
+                // Manejar diferentes tipos de fecha
+                if (dateParam === 'all') {
+                    // Obtener TODOS los logs de la BD sin filtro de fecha
+                    logs = await logger.getLogs(null, 10000); // null = sin filtro de fecha, 10000 = límite alto
+                } else if (dateParam === 'month') {
+                    // Obtener todos los logs del mes actual
+                    const today = new Date();
+                    const year = today.getFullYear();
+                    const month = String(today.getMonth() + 1).padStart(2, '0');
+                    
+                    // Obtener todos los días del mes
+                    const daysInMonth = new Date(year, today.getMonth() + 1, 0).getDate();
+                    for (let day = 1; day <= daysInMonth; day++) {
+                        const dateStr = `${year}-${month}-${String(day).padStart(2, '0')}`;
+                        const dayLogs = await logger.getLogs(dateStr);
+                        logs = logs.concat(dayLogs);
+                    }
+                } else if (dateParam === 'week') {
+                    // Obtener logs de la última semana
+                    const today = new Date();
+                    for (let i = 0; i < 7; i++) {
+                        const date = new Date(today);
+                        date.setDate(date.getDate() - i);
+                        const dateStr = date.toISOString().split('T')[0];
+                        const dayLogs = await logger.getLogs(dateStr);
+                        logs = logs.concat(dayLogs);
+                    }
+                } else if (dateParam === 'today') {
+                    const date = new Date().toISOString().split('T')[0];
+                    logs = await logger.getLogs(date);
+                } else if (dateParam === 'yesterday') {
+                    const yesterday = new Date();
+                    yesterday.setDate(yesterday.getDate() - 1);
+                    const date = yesterday.toISOString().split('T')[0];
+                    logs = await logger.getLogs(date);
+                } else {
+                    // Fecha específica
+                    logs = await logger.getLogs(dateParam);
+                }
                 const salesData = await salesManager.getAllSalesData();
                 const humanStates = await humanModeManager.getAllHumanStates();
                 
@@ -241,11 +283,14 @@ class WebServer {
                 logs.forEach(log => {
                     if (!log.userId) return;
                     
+                    // Obtener fecha del log
+                    const logDate = new Date(log.timestamp).toISOString().split('T')[0];
+                    
                     if (!conversationsByUser[log.userId]) {
                         conversationsByUser[log.userId] = {
                             id: '',
                             telefono: log.userId,
-                            fecha: date,
+                            fecha: logDate,
                             hora: '',
                             mensajes: 0,
                             posibleVenta: false,
@@ -300,15 +345,22 @@ class WebServer {
                 let idCounter = 1;
                 
                 for (const [userId, conv] of Object.entries(conversationsByUser)) {
-                    // Generar ID único para la conversación
-                    const conversationId = salesManager.generateConversationId(userId, date);
-                    conv.id = `${date}-${String(idCounter).padStart(3, '0')}`;
+                    // Generar ID único para la conversación usando la fecha real del log
+                    const conversationId = salesManager.generateConversationId(userId, conv.fecha);
+                    conv.id = `${conv.fecha}-${String(idCounter).padStart(3, '0')}`;
                     
-                    // Obtener estado de ventas
-                    const saleStatus = salesManager.getSaleStatus(conversationId);
-                    conv.posibleVenta = saleStatus.posibleVenta;
-                    conv.ventaCerrada = saleStatus.ventaCerrada;
-                    conv.citaAgendada = saleStatus.citaAgendada;
+                    // Obtener estado de ventas (AWAIT es crítico aquí)
+                    const saleStatus = await salesManager.getSaleStatus(conversationId);
+                    conv.posibleVenta = saleStatus.posibleVenta || false;
+                    conv.ventaCerrada = saleStatus.ventaCerrada || saleStatus.analizadoIA || false;
+                    conv.analizadoIA = saleStatus.analizadoIA || false;
+                    conv.citaAgendada = saleStatus.citaAgendada || false;
+                    
+                    console.log(`Estado cargado para ${userId}:`, {
+                        posibleVenta: conv.posibleVenta,
+                        analizadoIA: conv.analizadoIA,
+                        citaAgendada: conv.citaAgendada
+                    });
                     
                     // Verificar estado actual de modo humano/soporte
                     const currentMode = humanModeManager.getMode(userId);
@@ -338,7 +390,7 @@ class WebServer {
         });
 
         // API endpoint para actualizar estado de venta
-        this.app.post('/api/reports/sale-status', (req, res) => {
+        this.app.post('/api/reports/sale-status', async (req, res) => {
             try {
                 const { conversationId, phone, date, posibleVenta, ventaCerrada, citaAgendada, notas } = req.body;
                 
@@ -351,7 +403,8 @@ class WebServer {
                     return res.status(400).json({ error: 'Se requiere conversationId o phone y date' });
                 }
                 
-                const result = salesManager.updateSaleStatus(id, {
+                // Guardar en la base de datos usando setSaleStatus
+                const result = await salesManager.setSaleStatus(id, {
                     posibleVenta,
                     ventaCerrada,
                     citaAgendada,
@@ -391,6 +444,93 @@ class WebServer {
             } catch (error) {
                 console.error('Error analizando conversación:', error);
                 res.status(500).json({ error: 'Error interno del servidor' });
+            }
+        });
+
+        // ===== ENDPOINTS DE GESTIÓN DE CSV (SOLO ADMIN) =====
+        
+        // Configurar multer para subida de archivos
+        const upload = multer({ 
+            limits: { fileSize: 10 * 1024 * 1024 }, // Límite de 10MB
+            fileFilter: (req, file, cb) => {
+                if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
+                    cb(null, true);
+                } else {
+                    cb(new Error('Solo se permiten archivos CSV'));
+                }
+            }
+        });
+
+        // Subir archivo CSV
+        this.app.post('/api/csv/upload', requireAdmin, upload.single('csv'), async (req, res) => {
+            try {
+                if (!req.file) {
+                    return res.status(400).json({ error: 'No se proporcionó archivo CSV' });
+                }
+
+                const result = await csvService.saveCSV(
+                    req.file.originalname,
+                    req.file.buffer.toString('utf8')
+                );
+
+                res.json(result);
+            } catch (error) {
+                console.error('Error subiendo CSV:', error);
+                res.status(500).json({ error: error.message });
+            }
+        });
+
+        // Listar archivos CSV subidos
+        this.app.get('/api/csv/list', requireAdmin, async (req, res) => {
+            try {
+                const files = await csvService.listCSVFiles();
+                res.json({ files });
+            } catch (error) {
+                console.error('Error listando CSVs:', error);
+                res.status(500).json({ error: 'Error obteniendo lista de archivos' });
+            }
+        });
+
+        // Eliminar archivo CSV
+        this.app.delete('/api/csv/delete/:filename', requireAdmin, async (req, res) => {
+            try {
+                const result = await csvService.deleteCSV(req.params.filename);
+                res.json(result);
+            } catch (error) {
+                console.error('Error eliminando CSV:', error);
+                res.status(500).json({ error: error.message });
+            }
+        });
+
+        // Descargar plantilla CSV
+        this.app.get('/api/csv/template', (req, res) => {
+            try {
+                const templateContent = `Parque Industrial,Ubicación,Tipo,Ancho,Largo,Area (m2),Precio,Estado,Información Extra,Ventajas Estratégicas
+Vernes,Carr. México - Qro,Nave Industrial,50,30,1500,750000,Disponible,Incluye oficinas administrativas,Acceso directo a autopistas principales
+LuisOnorio,Av. Constituyentes,Micronave,25,20,500,350000,Pre-Venta,Cuenta con muelle de carga,Zona de alto flujo comercial`;
+
+                res.setHeader('Content-Type', 'text/csv');
+                res.setHeader('Content-Disposition', 'attachment; filename="plantilla_naves.csv"');
+                res.send(templateContent);
+            } catch (error) {
+                console.error('Error descargando plantilla CSV:', error);
+                res.status(500).json({ error: 'Error generando plantilla' });
+            }
+        });
+
+        // Buscar en CSVs (endpoint interno para la IA)
+        this.app.post('/api/csv/search', requireAuth, async (req, res) => {
+            try {
+                const { query } = req.body;
+                if (!query) {
+                    return res.status(400).json({ error: 'Query es requerido' });
+                }
+
+                const results = await csvService.searchInCSV(query);
+                res.json({ results });
+            } catch (error) {
+                console.error('Error buscando en CSV:', error);
+                res.status(500).json({ error: 'Error en la búsqueda' });
             }
         });
 
@@ -436,7 +576,7 @@ class WebServer {
                 sessionManager.clearSession(phone);
                 
                 // Cambiar a modo IA si estaba en modo humano
-                humanModeManager.setHumanMode(phone, false);
+                humanModeManager.setMode(phone, false);
                 
                 // Registrar el evento
                 logger.log('SYSTEM', `Conversación finalizada manualmente para ${phone}`, phone);

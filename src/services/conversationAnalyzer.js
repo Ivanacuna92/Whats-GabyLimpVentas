@@ -19,26 +19,25 @@ class ConversationAnalyzer {
             }).join('\n');
 
             const analysisPrompt = `Analiza la siguiente conversación y determina:
-1. SENTIMIENTO general del cliente (positivo, neutral, negativo)
-2. INTENCIÓN principal (información, compra, soporte, queja)
-3. TEMAS principales discutidos
-4. PROBLEMAS o OBJECIONES detectadas
-5. RECOMENDACIONES para mejorar la atención
-6. PUNTUACIÓN de satisfacción del 1-10
-7. PALABRAS CLAVE relevantes
+1. ¿Es una POSIBLE VENTA? (el cliente muestra interés en comprar o solicita precios/información de productos)
+2. ¿Es una VENTA CERRADA? (el cliente confirmó compra o llegó a un acuerdo)
+3. ¿Se AGENDÓ UNA CITA? (se acordó una reunión, visita o llamada futura)
+4. SENTIMIENTO general del cliente (positivo, neutral, negativo)
+5. INTENCIÓN principal (información, compra, soporte, queja)
 
 Conversación:
 ${conversationText}
 
 Responde ÚNICAMENTE con un JSON en este formato exacto:
 {
+  "posibleVenta": true o false,
+  "ventaCerrada": true o false,
+  "citaAgendada": true o false,
   "sentiment": "positivo/neutral/negativo",
   "intent": "información/compra/soporte/queja/otro",
-  "main_topics": ["tema1", "tema2", "tema3"],
-  "issues_detected": ["problema1", "problema2"],
-  "recommendations": ["recomendación1", "recomendación2"],
+  "main_topics": ["tema1", "tema2"],
   "satisfaction_score": 7.5,
-  "keywords": ["palabra1", "palabra2", "palabra3"]
+  "keywords": ["palabra1", "palabra2"]
 }`;
 
             const response = await axios.post(this.apiUrl, {
@@ -71,6 +70,9 @@ Responde ÚNICAMENTE con un JSON en este formato exacto:
                 const analysis = JSON.parse(cleanResponse);
                 
                 const result = {
+                    posibleVenta: analysis.posibleVenta === true || analysis.posibleVenta === 'true',
+                    ventaCerrada: analysis.ventaCerrada === true || analysis.ventaCerrada === 'true',
+                    citaAgendada: analysis.citaAgendada === true || analysis.citaAgendada === 'true',
                     sentiment: analysis.sentiment || 'neutral',
                     intent: analysis.intent || 'otro',
                     main_topics: Array.isArray(analysis.main_topics) ? analysis.main_topics : [],
@@ -113,9 +115,10 @@ Responde ÚNICAMENTE con un JSON en este formato exacto:
         // Palabras clave para análisis
         const positiveWords = ['gracias', 'excelente', 'perfecto', 'bueno', 'satisfecho', 'contento'];
         const negativeWords = ['malo', 'terrible', 'problema', 'error', 'molesto', 'insatisfecho'];
-        const buyingWords = ['comprar', 'precio', 'costo', 'cuánto', 'pagar', 'tarifa', 'presupuesto'];
+        const buyingWords = ['comprar', 'precio', 'costo', 'cuánto', 'pagar', 'tarifa', 'presupuesto', 'cotización', 'nave', 'renta', 'venta'];
         const supportWords = ['ayuda', 'problema', 'error', 'falla', 'soporte', 'asistencia'];
         const complaintWords = ['queja', 'reclamo', 'malo', 'terrible', 'molesto'];
+        const appointmentWords = ['cita', 'reunión', 'agendar', 'visita', 'llamada', 'ver', 'conocer'];
 
         // Determinar sentimiento
         let sentiment = 'neutral';
@@ -135,12 +138,20 @@ Responde ÚNICAMENTE con un JSON en este formato exacto:
             intent = 'queja';
         }
 
+        // Detectar posible venta, venta cerrada y cita agendada
+        const posibleVenta = buyingWords.some(word => text.includes(word));
+        const ventaCerrada = text.includes('compro') || text.includes('acepto') || text.includes('quiero') && buyingWords.some(word => text.includes(word));
+        const citaAgendada = appointmentWords.some(word => text.includes(word));
+
         // Calcular puntuación de satisfacción básica
         let score = 5.0;
         if (sentiment === 'positivo') score = 8.0;
         if (sentiment === 'negativo') score = 2.0;
 
         const result = {
+            posibleVenta,
+            ventaCerrada,
+            citaAgendada,
             sentiment,
             intent,
             main_topics: ['análisis_básico'],

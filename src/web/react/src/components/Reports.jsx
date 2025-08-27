@@ -3,20 +3,99 @@ import { getReports, updateSaleStatus, analyzeConversation } from '../services/a
 
 function Reports() {
   const [reports, setReports] = useState([]);
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState('all'); // Cambiar default a 'all' para ver todos
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeProgress, setAnalyzeProgress] = useState({ current: 0, total: 0 });
   const [editingId, setEditingId] = useState(null);
+  const [filters, setFilters] = useState({
+    phone: '',
+    status: 'all',
+    hasSale: 'all',
+    hasAppointment: 'all'
+  });
+  const [filteredReports, setFilteredReports] = useState([]);
+  const [pendingAnalysis, setPendingAnalysis] = useState(null);
+  const [analyzedIds, setAnalyzedIds] = useState(new Set());
 
   useEffect(() => {
     loadReports();
+    // Cargar análisis pendiente de localStorage
+    const savedAnalysis = localStorage.getItem('pendingAnalysis');
+    if (savedAnalysis) {
+      const analysis = JSON.parse(savedAnalysis);
+      setPendingAnalysis(analysis);
+      setAnalyzedIds(new Set(analysis.analyzedIds || []));
+    }
   }, [selectedDate]);
+
+  useEffect(() => {
+    applyFilters();
+  }, [reports, filters]);
+
+  // Guardar estado del análisis cuando cambie
+  useEffect(() => {
+    if (pendingAnalysis) {
+      localStorage.setItem('pendingAnalysis', JSON.stringify({
+        ...pendingAnalysis,
+        analyzedIds: Array.from(analyzedIds)
+      }));
+    }
+  }, [pendingAnalysis, analyzedIds]);
+
+  // Limpiar al desmontar el componente si no hay análisis en progreso
+  useEffect(() => {
+    return () => {
+      if (!analyzing) {
+        localStorage.removeItem('pendingAnalysis');
+      }
+    };
+  }, [analyzing]);
+
+  const applyFilters = () => {
+    let filtered = [...reports];
+
+    // Filtrar por teléfono
+    if (filters.phone) {
+      filtered = filtered.filter(r => 
+        r.telefono.includes(filters.phone)
+      );
+    }
+
+    // Filtrar por estado
+    if (filters.status !== 'all') {
+      filtered = filtered.filter(r => {
+        if (filters.status === 'human') return r.modoHumano;
+        if (filters.status === 'support') return r.soporteActivado;
+        if (filters.status === 'ai') return !r.modoHumano && !r.soporteActivado;
+        return true;
+      });
+    }
+
+    // Filtrar por ventas
+    if (filters.hasSale !== 'all') {
+      const hasSale = filters.hasSale === 'yes';
+      filtered = filtered.filter(r => 
+        (r.posibleVenta || r.ventaCerrada) === hasSale
+      );
+    }
+
+    // Filtrar por citas
+    if (filters.hasAppointment !== 'all') {
+      const hasAppointment = filters.hasAppointment === 'yes';
+      filtered = filtered.filter(r => r.citaAgendada === hasAppointment);
+    }
+
+    setFilteredReports(filtered);
+  };
 
   const loadReports = async () => {
     setLoading(true);
     try {
-      const data = await getReports(selectedDate);
+      // Si es una fecha específica (formato YYYY-MM-DD), usar el valor directamente
+      // Si no, pasar el valor especial (month, week, today, yesterday)
+      const dateToSend = selectedDate.includes('-') ? selectedDate : selectedDate;
+      const data = await getReports(dateToSend);
       setReports(data);
     } catch (error) {
       console.error('Error cargando reportes:', error);
@@ -52,8 +131,8 @@ function Reports() {
   };
 
   const getStatusBadge = (report) => {
-    if (report.ventaCerrada) {
-      return <span className="px-2 py-1 text-xs rounded-full bg-navetec-secondary-3/20 text-navetec-primary-dark">Venta Cerrada</span>;
+    if (report.ventaCerrada || report.analizadoIA) {
+      return <span className="px-2 py-1 text-xs rounded-full bg-navetec-secondary-3/20 text-navetec-primary-dark">Analizado con IA</span>;
     }
     if (report.citaAgendada) {
       return <span className="px-2 py-1 text-xs rounded-full bg-navetec-secondary-1/20 text-navetec-secondary-1">Cita Agendada</span>;
@@ -67,65 +146,129 @@ function Reports() {
     return <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-800">Normal</span>;
   };
 
-  const analyzeAllConversations = async () => {
+  const reAnalyzeAll = async () => {
+    if (confirm('¿Estás seguro de que deseas volver a analizar TODAS las conversaciones? Esto sobrescribirá los resultados existentes.')) {
+      // Limpiar localStorage y estado
+      localStorage.removeItem('pendingAnalysis');
+      setPendingAnalysis(null);
+      setAnalyzedIds(new Set());
+      
+      // Resetear análisis en el backend
+      try {
+        setLoading(true);
+        // Llamar endpoint para resetear análisis si existe, o simplemente continuar
+        await analyzeAllConversations(false, true); // true = forceReanalyze
+      } catch (error) {
+        console.error('Error resetting analysis:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  const analyzeAllConversations = async (resume = false, forceReanalyze = false) => {
     setAnalyzing(true);
     
-    // Contar conversaciones con mensajes
-    const conversationsToAnalyze = reports.filter(r => r.conversacion && r.conversacion.length > 0);
-    setAnalyzeProgress({ current: 0, total: conversationsToAnalyze.length });
+    // Si estamos reanudando, usar los IDs ya analizados (excepto si es re-análisis forzado)
+    let alreadyAnalyzed = resume && pendingAnalysis && !forceReanalyze ? new Set(analyzedIds) : new Set();
+    
+    // Filtrar conversaciones que no han sido analizadas (o todas si es re-análisis forzado)
+    const conversationsToAnalyze = filteredReports.filter(r => 
+      r.conversacion && 
+      r.conversacion.length > 0 && 
+      (forceReanalyze || !alreadyAnalyzed.has(r.id))
+    );
+    
+    const totalToAnalyze = conversationsToAnalyze.length + alreadyAnalyzed.size;
+    setAnalyzeProgress({ current: alreadyAnalyzed.size, total: totalToAnalyze });
+    
+    // Guardar estado inicial del análisis
+    setPendingAnalysis({
+      startDate: new Date().toISOString(),
+      totalReports: totalToAnalyze,
+      analyzedIds: Array.from(alreadyAnalyzed)
+    });
     
     try {
       for (let i = 0; i < conversationsToAnalyze.length; i++) {
         const report = conversationsToAnalyze[i];
         
         // Actualizar progreso
-        setAnalyzeProgress({ current: i + 1, total: conversationsToAnalyze.length });
+        const currentProgress = alreadyAnalyzed.size + i + 1;
+        setAnalyzeProgress({ current: currentProgress, total: totalToAnalyze });
         
-        // Marcar esta conversación como "analizando"
-        setReports(prev => prev.map(r => 
-          r.id === report.id 
-            ? { ...r, isAnalyzing: true }
-            : r
-        ));
+        // Marcar esta conversación como "analizando" en ambos estados
+        const markAsAnalyzing = (r) => 
+          r.id === report.id ? { ...r, isAnalyzing: true } : r;
         
-        const analysis = await analyzeConversation(report.conversacion);
+        setReports(prev => prev.map(markAsAnalyzing));
+        setFilteredReports(prev => prev.map(markAsAnalyzing));
         
-        // Actualizar el estado en el backend
-        await updateSaleStatus(null, {
-          phone: report.telefono.replace('@s.whatsapp.net', ''),
-          date: report.fecha,
-          posibleVenta: analysis.posibleVenta,
-          ventaCerrada: analysis.ventaCerrada,
-          citaAgendada: analysis.citaAgendada
-        });
+        try {
+          const analysis = await analyzeConversation(report.conversacion);
+          
+          // Actualizar el estado en el backend INMEDIATAMENTE
+          await updateSaleStatus(null, {
+            phone: report.telefono.replace('@s.whatsapp.net', ''),
+            date: report.fecha,
+            posibleVenta: analysis.posibleVenta,
+            ventaCerrada: true, // Marcamos como analizado
+            citaAgendada: analysis.citaAgendada
+          });
 
-        // Actualizar el estado local y quitar marca de analizando
-        setReports(prev => prev.map(r => 
-          r.id === report.id 
-            ? { ...r, ...analysis, isAnalyzing: false }
-            : r
-        ));
+          // Actualizar el estado local y quitar marca de analizando en ambos estados
+          const updateWithAnalysis = (r) => 
+            r.id === report.id 
+              ? { ...r, ...analysis, isAnalyzing: false, analyzed: true }
+              : r;
+          
+          setReports(prev => prev.map(updateWithAnalysis));
+          setFilteredReports(prev => prev.map(updateWithAnalysis));
+          
+          // Agregar a la lista de analizados
+          setAnalyzedIds(prev => {
+            const newSet = new Set(prev);
+            newSet.add(report.id);
+            return newSet;
+          });
+          
+          // Actualizar estado del análisis pendiente
+          setPendingAnalysis(prev => ({
+            ...prev,
+            analyzedIds: [...(prev?.analyzedIds || []), report.id]
+          }));
+          
+        } catch (analysisError) {
+          console.error(`Error analizando conversación ${report.id}:`, analysisError);
+          // Continuar con el siguiente aunque este falle
+        }
 
         // Pequeña pausa entre análisis
         await new Promise(resolve => setTimeout(resolve, 500));
       }
+      
+      // Limpiar localStorage al completar
+      localStorage.removeItem('pendingAnalysis');
+      setPendingAnalysis(null);
       
       // Recargar reportes para obtener datos actualizados del servidor
       await loadReports();
       
     } catch (error) {
       console.error('Error analizando conversaciones:', error);
-      alert('Error al analizar conversaciones');
-      // Quitar todas las marcas de analizando en caso de error
-      setReports(prev => prev.map(r => ({ ...r, isAnalyzing: false })));
+      alert('Error al analizar conversaciones. Los datos analizados hasta ahora se han guardado.');
+      // NO limpiar los IDs analizados, mantenerlos para poder reanudar
     } finally {
       setAnalyzing(false);
-      setAnalyzeProgress({ current: 0, total: 0 });
+      // No limpiar el progreso inmediatamente para que el usuario vea que se completó
+      setTimeout(() => {
+        setAnalyzeProgress({ current: 0, total: 0 });
+      }, 2000);
     }
   };
 
   const exportToCSV = () => {
-    const headers = ['ID', 'Fecha', 'Hora', 'Teléfono', 'Mensajes', 'Posible Venta', 'Venta Cerrada', 'Cita Agendada', 'Soporte'];
+    const headers = ['ID', 'Fecha', 'Hora', 'Teléfono', 'Mensajes', 'Posible Venta', 'Analizado con IA', 'Cita Agendada', 'Soporte'];
     const csvContent = [
       headers.join(','),
       ...reports.map(r => [
@@ -135,7 +278,7 @@ function Reports() {
         formatPhone(r.telefono),
         r.mensajes,
         r.posibleVenta ? 'Sí' : 'No',
-        r.ventaCerrada ? 'Sí' : 'No',
+        (r.ventaCerrada || r.analizadoIA) ? 'Sí' : 'No',
         r.citaAgendada ? 'Sí' : 'No',
         r.soporteActivado ? 'Sí' : 'No'
       ].join(','))
@@ -158,20 +301,48 @@ function Reports() {
         <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-light text-navetec-primary">Reporte de Conversaciones</h2>
         <div className="flex gap-4 items-center">
-          <input
-            type="date"
+          <select
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
             className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:border-navetec-primary"
-          />
+          >
+            <option value="all">Todos los registros</option>
+            <option value="month">Este mes</option>
+            <option value="week">Esta semana</option>
+            <option value="today">Hoy</option>
+            <option value="yesterday">Ayer</option>
+            <option value="custom">Fecha específica</option>
+          </select>
+          {selectedDate === 'custom' && (
+            <input
+              type="date"
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:border-navetec-primary"
+            />
+          )}
+          {pendingAnalysis && !analyzing && (
+            <button
+              onClick={() => analyzeAllConversations(true)}
+              className="px-4 py-2 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 transition-all mr-2 min-w-[180px]"
+            >
+              Reanudar Análisis ({analyzedIds.size} completados)
+            </button>
+          )}
           <button
-            onClick={analyzeAllConversations}
+            onClick={() => analyzeAllConversations(false)}
             className="px-4 py-2 bg-navetec-primary text-white rounded-md hover:bg-navetec-primary-dark transition-all mr-2 min-w-[180px]"
             disabled={reports.length === 0 || analyzing}
           >
             {analyzing 
               ? `Analizando... ${analyzeProgress.current}/${analyzeProgress.total}` 
-              : 'Analizar con IA'}
+              : pendingAnalysis ? 'Nuevo Análisis' : 'Analizar con IA'}
+          </button>
+          <button
+            onClick={reAnalyzeAll}
+            className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition-all mr-2 min-w-[180px]"
+            disabled={reports.length === 0 || analyzing}
+          >
+            Volver a analizar con IA
           </button>
           <button
             onClick={exportToCSV}
@@ -180,6 +351,63 @@ function Reports() {
           >
             Exportar CSV
           </button>
+        </div>
+      </div>
+
+      {/* Filtros adicionales */}
+      <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+        <h3 className="text-sm font-semibold text-gray-700 mb-3">Filtros</h3>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Teléfono</label>
+            <input
+              type="text"
+              placeholder="Buscar teléfono..."
+              value={filters.phone}
+              onChange={(e) => setFilters({...filters, phone: e.target.value})}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navetec-primary"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Estado</label>
+            <select
+              value={filters.status}
+              onChange={(e) => setFilters({...filters, status: e.target.value})}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navetec-primary"
+            >
+              <option value="all">Todos</option>
+              <option value="ai">IA</option>
+              <option value="human">Humano</option>
+              <option value="support">Soporte</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Ventas</label>
+            <select
+              value={filters.hasSale}
+              onChange={(e) => setFilters({...filters, hasSale: e.target.value})}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navetec-primary"
+            >
+              <option value="all">Todos</option>
+              <option value="yes">Con venta</option>
+              <option value="no">Sin venta</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Citas</label>
+            <select
+              value={filters.hasAppointment}
+              onChange={(e) => setFilters({...filters, hasAppointment: e.target.value})}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navetec-primary"
+            >
+              <option value="all">Todos</option>
+              <option value="yes">Con cita</option>
+              <option value="no">Sin cita</option>
+            </select>
+          </div>
+        </div>
+        <div className="mt-2 text-xs text-gray-500">
+          Mostrando {filteredReports.length} de {reports.length} conversaciones
         </div>
       </div>
 
@@ -230,7 +458,7 @@ function Reports() {
                   Posible Venta
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Venta Cerrada
+                  Analizado con IA
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Cita Agendada
@@ -241,19 +469,22 @@ function Reports() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {reports.length === 0 ? (
+              {filteredReports.length === 0 ? (
                 <tr>
                   <td colSpan="9" className="px-6 py-4 text-center text-gray-500">
                     No hay conversaciones para esta fecha
                   </td>
                 </tr>
               ) : (
-                reports.map((report) => (
-                  <tr key={report.id} className={`hover:bg-gray-50 transition-all ${report.isAnalyzing ? 'bg-navetec-secondary-2/10 animate-pulse' : ''}`}>
+                filteredReports.map((report) => (
+                  <tr key={report.id} className={`hover:bg-gray-50 transition-all ${report.isAnalyzing ? 'bg-navetec-secondary-2/10 animate-pulse' : ''} ${analyzedIds.has(report.id) ? 'bg-green-50' : ''}`}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       <div className="flex items-center">
                         {report.isAnalyzing && (
                           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-navetec-primary mr-2"></div>
+                        )}
+                        {analyzedIds.has(report.id) && !report.isAnalyzing && (
+                          <span className="text-green-500 mr-2" title="Analizado">✓</span>
                         )}
                         {report.id}
                       </div>
@@ -285,9 +516,10 @@ function Reports() {
                     <td className="px-6 py-4 whitespace-nowrap">
                       <input
                         type="checkbox"
-                        checked={report.ventaCerrada}
-                        onChange={(e) => handleSaleStatusChange(report, 'ventaCerrada', e.target.checked)}
-                        className="h-4 w-4 text-navetec-primary focus:ring-navetec-primary border-gray-300 rounded cursor-pointer"
+                        checked={report.ventaCerrada || report.analizadoIA || analyzedIds.has(report.id)}
+                        disabled={true}
+                        className="h-4 w-4 text-navetec-primary focus:ring-navetec-primary border-gray-300 rounded"
+                        title="Se marca automáticamente al analizar con IA"
                       />
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -364,9 +596,9 @@ function Reports() {
               </div>
             </div>
             <div className="bg-navetec-secondary-3/10 rounded-lg p-4">
-              <div className="text-sm text-navetec-secondary-3">Ventas Cerradas</div>
+              <div className="text-sm text-navetec-secondary-3">Analizados con IA</div>
               <div className="text-2xl font-semibold text-navetec-primary-dark">
-                {reports.filter(r => r.ventaCerrada).length}
+                {reports.filter(r => r.ventaCerrada || r.analizadoIA || analyzedIds.has(r.id)).length}
               </div>
             </div>
             <div className="bg-navetec-secondary-1/10 rounded-lg p-4">

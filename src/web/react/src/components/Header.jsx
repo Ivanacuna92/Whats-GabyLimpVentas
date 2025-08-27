@@ -39,6 +39,18 @@ function Header({ currentView, onViewChange, user, onLogout }) {
           >
             Contactos
           </button>
+          {user?.role === 'admin' && (
+            <button 
+              className={`px-8 py-2 rounded-md font-medium transition-all ${
+                currentView === 'naves' 
+                  ? 'bg-navetec-primary text-white' 
+                  : 'text-gray-600 hover:text-navetec-primary'
+              }`}
+              onClick={() => onViewChange('naves')}
+            >
+              Naves
+            </button>
+          )}
         </nav>
         
         {user && (
