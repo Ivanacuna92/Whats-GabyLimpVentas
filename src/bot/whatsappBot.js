@@ -189,6 +189,33 @@ class WhatsAppBot {
             this.sock.end();
         }
     }
+    
+    async logout() {
+        console.log('Cerrando sesión de WhatsApp...');
+        try {
+            if (this.sock) {
+                await this.sock.logout();
+            }
+            // Limpiar archivos de autenticación
+            const fs = require('fs').promises;
+            const path = require('path');
+            const authPath = path.join(process.cwd(), 'auth_baileys');
+            
+            try {
+                await fs.rm(authPath, { recursive: true, force: true });
+                console.log('Sesión eliminada correctamente');
+            } catch (err) {
+                console.log('No había sesión previa o ya fue eliminada');
+            }
+            
+            // Reiniciar el bot para generar nuevo QR
+            setTimeout(() => this.start(), 2000);
+            return true;
+        } catch (error) {
+            console.error('Error al cerrar sesión:', error);
+            return false;
+        }
+    }
 }
 
 module.exports = WhatsAppBot;

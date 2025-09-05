@@ -58,6 +58,39 @@ class WebServer {
             }
         });
         
+        // Endpoint para cerrar sesión y generar nuevo QR
+        this.app.post('/api/logout', async (req, res) => {
+            try {
+                const bot = global.whatsappBot;
+                if (!bot) {
+                    return res.status(400).json({ 
+                        success: false,
+                        message: 'Bot no está inicializado' 
+                    });
+                }
+                
+                const result = await bot.logout();
+                
+                if (result) {
+                    res.json({ 
+                        success: true,
+                        message: 'Sesión cerrada. Nuevo QR disponible en 2 segundos.' 
+                    });
+                } else {
+                    res.status(500).json({ 
+                        success: false,
+                        message: 'Error al cerrar sesión' 
+                    });
+                }
+            } catch (error) {
+                console.error('Error en logout:', error);
+                res.status(500).json({ 
+                    success: false,
+                    error: 'Error al procesar logout' 
+                });
+            }
+        });
+        
         // Página HTML para mostrar el QR
         this.app.get('/qr', (req, res) => {
             res.send(`
@@ -100,10 +133,36 @@ class WebServer {
                         <h1>WhatsApp QR Code</h1>
                         <div id="qrcode"></div>
                         <div id="status" class="waiting">Cargando código QR...</div>
+                        <button onclick="resetSession()" style="margin-top: 20px; padding: 10px 20px; background: #ff4444; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px;">
+                            🔄 Reiniciar Sesión
+                        </button>
                     </div>
                     
                     <script>
                         let qrcode = null;
+                        
+                        async function resetSession() {
+                            if (confirm('¿Estás seguro de que quieres reiniciar la sesión de WhatsApp?')) {
+                                try {
+                                    const response = await fetch('/api/logout', { method: 'POST' });
+                                    const data = await response.json();
+                                    
+                                    const statusEl = document.getElementById('status');
+                                    if (data.success) {
+                                        statusEl.textContent = 'Reiniciando sesión... Espera el nuevo QR';
+                                        statusEl.className = 'waiting';
+                                        // Esperar 3 segundos antes de verificar el nuevo QR
+                                        setTimeout(checkQR, 3000);
+                                    } else {
+                                        statusEl.textContent = 'Error: ' + data.message;
+                                        statusEl.className = 'error';
+                                    }
+                                } catch (error) {
+                                    document.getElementById('status').textContent = 'Error: ' + error.message;
+                                    document.getElementById('status').className = 'error';
+                                }
+                            }
+                        }
                         
                         async function checkQR() {
                             try {
