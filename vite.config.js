@@ -15,7 +15,7 @@ export default defineConfig({
       overlay: false
     },
     host: true,
-    allowedHosts: ['dcf66baefa9f.ngrok-free.app', '.ngrok-free.app', '.ngrok.io', 'localhost', '127.0.0.1']
+    allowedHosts: ['dcf66baefa9f.ngrok-free.app', '.ngrok-free.app', '.ngrok.io', 'localhost', '127.0.0.1', 'navetec.aloia.dev', '.aloia.dev']
   },
   resolve: {
     alias: {
