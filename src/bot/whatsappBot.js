@@ -1,5 +1,5 @@
 const makeWASocket = require('@whiskeysockets/baileys').default;
-const { DisconnectReason, useMultiFileAuthState, makeCacheableSignalKeyStore } = require('@whiskeysockets/baileys');
+const { DisconnectReason, useMultiFileAuthState, makeCacheableSignalKeyStore, Browsers } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
 const pino = require('pino');
 const config = require('../config/config');
@@ -15,6 +15,8 @@ class WhatsAppBot {
         this.systemPrompt = promptLoader.getPrompt();
         this.store = null;
         this.currentQR = null;
+        this.reconnectAttempts = 0;
+        this.maxReconnectAttempts = 3;
     }
 
     async start() {
@@ -32,7 +34,7 @@ class WhatsAppBot {
             },
             printQRInTerminal: false,
             logger: pino({ level: 'silent' }),
-            browser: ['WhatsBot', 'Chrome', '1.0.0']
+            browser: Browsers.macOS('Google Chrome')
         });
         
         // Guardar credenciales cuando se actualicen
@@ -54,9 +56,16 @@ class WhatsAppBot {
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
                 console.log('Conexión cerrada debido a', lastDisconnect?.error, ', reconectando:', shouldReconnect);
                 
-                // Si es error 405, limpiar sesión y reiniciar
+                // Si es error 405, limpiar sesión y reiniciar con límite
                 if (statusCode === 405) {
-                    console.log('Error 405 detectado. Limpiando sesión corrupta...');
+                    this.reconnectAttempts++;
+                    
+                    if (this.reconnectAttempts > this.maxReconnectAttempts) {
+                        console.log('❌ Máximo de intentos de reconexión alcanzado. Por favor usa el botón de reiniciar sesión en /qr');
+                        return;
+                    }
+                    
+                    console.log(`Error 405 detectado. Intento ${this.reconnectAttempts}/${this.maxReconnectAttempts}. Limpiando sesión...`);
                     const fs = require('fs');
                     const path = require('path');
                     const authPath = path.join(process.cwd(), 'auth_baileys');
@@ -64,7 +73,7 @@ class WhatsAppBot {
                     try {
                         if (fs.existsSync(authPath)) {
                             fs.rmSync(authPath, { recursive: true, force: true });
-                            console.log('Sesión corrupta eliminada. Reiniciando para generar nuevo QR...');
+                            console.log('Sesión eliminada. Reiniciando...');
                         }
                     } catch (err) {
                         console.log('Error limpiando sesión:', err);
@@ -72,11 +81,13 @@ class WhatsAppBot {
                     
                     setTimeout(() => this.start(), 3000);
                 } else if (shouldReconnect) {
+                    this.reconnectAttempts = 0; // Reset counter on other errors
                     setTimeout(() => this.start(), 5000);
                 }
             } else if (connection === 'open') {
                 console.log('¡Bot de WhatsApp conectado y listo!');
                 this.currentQR = null; // Limpiar QR al conectar
+                this.reconnectAttempts = 0; // Reset counter on successful connection
                 logger.log('SYSTEM', 'Bot iniciado correctamente con Baileys');
                 sessionManager.startCleanupTimer(this.sock);
             }
@@ -211,6 +222,9 @@ class WhatsAppBot {
     async logout() {
         console.log('Cerrando sesión de WhatsApp...');
         try {
+            // Reset reconnect counter
+            this.reconnectAttempts = 0;
+            
             if (this.sock) {
                 await this.sock.logout();
             }
