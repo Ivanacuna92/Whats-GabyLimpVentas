@@ -44,7 +44,7 @@ class WhatsAppBot {
             
             if (qr) {
                 console.log('Escanea este código QR con WhatsApp:');
-                console.log('O visita: http://tu-servidor:7156/qr');
+                console.log('O visita: http://tu-servidor:4242/qr');
                 this.currentQR = qr;
                 qrcode.generate(qr, { small: true });
             }
