@@ -1,5 +1,5 @@
-const makeWASocket = require('@whiskeysockets/baileys').default;
-const { DisconnectReason, useMultiFileAuthState, makeCacheableSignalKeyStore, Browsers } = require('@whiskeysockets/baileys');
+const makeWASocket = require('baileys').default;
+const { DisconnectReason, useMultiFileAuthState, makeCacheableSignalKeyStore, Browsers } = require('baileys');
 const qrcode = require('qrcode-terminal');
 const pino = require('pino');
 const config = require('../config/config');
