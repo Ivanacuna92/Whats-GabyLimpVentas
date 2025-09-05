@@ -14,6 +14,7 @@ class WhatsAppBot {
         this.sock = null;
         this.systemPrompt = promptLoader.getPrompt();
         this.store = null;
+        this.currentQR = null;
     }
 
     async start() {
@@ -43,6 +44,8 @@ class WhatsAppBot {
             
             if (qr) {
                 console.log('Escanea este código QR con WhatsApp:');
+                console.log('O visita: http://tu-servidor:7156/qr');
+                this.currentQR = qr;
                 qrcode.generate(qr, { small: true });
             }
             
@@ -55,6 +58,7 @@ class WhatsAppBot {
                 }
             } else if (connection === 'open') {
                 console.log('¡Bot de WhatsApp conectado y listo!');
+                this.currentQR = null; // Limpiar QR al conectar
                 logger.log('SYSTEM', 'Bot iniciado correctamente con Baileys');
                 sessionManager.startCleanupTimer(this.sock);
             }

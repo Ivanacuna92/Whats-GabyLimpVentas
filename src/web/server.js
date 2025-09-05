@@ -37,6 +37,120 @@ class WebServer {
     setupRoutes() {
         // ===== RUTAS PÚBLICAS DE AUTENTICACIÓN =====
         
+        // Endpoint para obtener código QR de WhatsApp
+        this.app.get('/api/qr', (req, res) => {
+            try {
+                const bot = global.whatsappBot;
+                if (!bot || !bot.currentQR) {
+                    return res.json({ 
+                        qr: null, 
+                        message: 'No hay código QR disponible. El bot puede estar ya conectado o reiniciándose.' 
+                    });
+                }
+                
+                res.json({ 
+                    qr: bot.currentQR,
+                    message: 'Escanea este código con WhatsApp'
+                });
+            } catch (error) {
+                console.error('Error obteniendo QR:', error);
+                res.status(500).json({ error: 'Error obteniendo código QR' });
+            }
+        });
+        
+        // Página HTML para mostrar el QR
+        this.app.get('/qr', (req, res) => {
+            res.send(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>WhatsApp QR Code</title>
+                    <style>
+                        body {
+                            font-family: Arial, sans-serif;
+                            display: flex;
+                            justify-content: center;
+                            align-items: center;
+                            height: 100vh;
+                            margin: 0;
+                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        }
+                        .container {
+                            background: white;
+                            padding: 2rem;
+                            border-radius: 10px;
+                            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+                            text-align: center;
+                        }
+                        h1 { color: #333; margin-bottom: 1rem; }
+                        #qrcode { margin: 20px auto; }
+                        #status { 
+                            padding: 10px; 
+                            border-radius: 5px; 
+                            margin-top: 10px;
+                        }
+                        .success { background: #4caf50; color: white; }
+                        .waiting { background: #ff9800; color: white; }
+                        .error { background: #f44336; color: white; }
+                    </style>
+                    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+                </head>
+                <body>
+                    <div class="container">
+                        <h1>WhatsApp QR Code</h1>
+                        <div id="qrcode"></div>
+                        <div id="status" class="waiting">Cargando código QR...</div>
+                    </div>
+                    
+                    <script>
+                        let qrcode = null;
+                        
+                        async function checkQR() {
+                            try {
+                                const response = await fetch('/api/qr');
+                                const data = await response.json();
+                                
+                                const statusEl = document.getElementById('status');
+                                const qrEl = document.getElementById('qrcode');
+                                
+                                if (data.qr) {
+                                    statusEl.textContent = 'Escanea el código con WhatsApp';
+                                    statusEl.className = 'waiting';
+                                    
+                                    if (qrcode) {
+                                        qrcode.clear();
+                                        qrcode.makeCode(data.qr);
+                                    } else {
+                                        qrcode = new QRCode(qrEl, {
+                                            text: data.qr,
+                                            width: 256,
+                                            height: 256
+                                        });
+                                    }
+                                } else {
+                                    if (qrcode) {
+                                        qrcode.clear();
+                                        qrcode = null;
+                                    }
+                                    qrEl.innerHTML = '';
+                                    statusEl.textContent = data.message || 'Bot conectado o reiniciándose';
+                                    statusEl.className = 'success';
+                                }
+                            } catch (error) {
+                                document.getElementById('status').textContent = 'Error: ' + error.message;
+                                document.getElementById('status').className = 'error';
+                            }
+                        }
+                        
+                        // Verificar cada 3 segundos
+                        checkQR();
+                        setInterval(checkQR, 3000);
+                    </script>
+                </body>
+                </html>
+            `);
+        });
+        
         // Login
         this.app.post('/api/auth/login', async (req, res) => {
             try {
