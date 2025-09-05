@@ -50,10 +50,28 @@ class WhatsAppBot {
             }
             
             if (connection === 'close') {
-                const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+                const statusCode = lastDisconnect?.error?.output?.statusCode;
+                const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
                 console.log('Conexión cerrada debido a', lastDisconnect?.error, ', reconectando:', shouldReconnect);
                 
-                if (shouldReconnect) {
+                // Si es error 405, limpiar sesión y reiniciar
+                if (statusCode === 405) {
+                    console.log('Error 405 detectado. Limpiando sesión corrupta...');
+                    const fs = require('fs');
+                    const path = require('path');
+                    const authPath = path.join(process.cwd(), 'auth_baileys');
+                    
+                    try {
+                        if (fs.existsSync(authPath)) {
+                            fs.rmSync(authPath, { recursive: true, force: true });
+                            console.log('Sesión corrupta eliminada. Reiniciando para generar nuevo QR...');
+                        }
+                    } catch (err) {
+                        console.log('Error limpiando sesión:', err);
+                    }
+                    
+                    setTimeout(() => this.start(), 3000);
+                } else if (shouldReconnect) {
                     setTimeout(() => this.start(), 5000);
                 }
             } else if (connection === 'open') {
