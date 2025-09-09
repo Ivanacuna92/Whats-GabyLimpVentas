@@ -6,7 +6,7 @@ class CSVService {
   constructor() {
     this.dataDir = path.join(process.cwd(), 'data', 'naves');
     this.ensureDataDir();
-    
+
     // Campos obligatorios que DEBE tener el CSV
     this.requiredFields = [
       'Parque Industrial',
@@ -46,21 +46,21 @@ class CSVService {
 
       // Obtener los campos del CSV
       const csvFields = Object.keys(records[0]);
-      
+
       // Validar que todos los campos requeridos estén presentes
-      const missingFields = this.requiredFields.filter(field => 
+      const missingFields = this.requiredFields.filter(field =>
         !csvFields.includes(field)
       );
-      
+
       if (missingFields.length > 0) {
         throw new Error(`ERROR: Faltan los siguientes campos obligatorios en el CSV:\n${missingFields.join(', ')}\n\nEl archivo debe tener TODOS estos campos: ${this.requiredFields.join(', ')}`);
       }
-      
+
       // Validar que no haya campos extras no esperados
-      const extraFields = csvFields.filter(field => 
+      const extraFields = csvFields.filter(field =>
         !this.requiredFields.includes(field)
       );
-      
+
       if (extraFields.length > 0) {
         throw new Error(`ERROR: El archivo contiene campos no permitidos:\n${extraFields.join(', ')}\n\nSolo se permiten estos campos: ${this.requiredFields.join(', ')}`);
       }
@@ -90,7 +90,7 @@ class CSVService {
           console.log(`Archivo anterior eliminado: ${file}`);
         }
       }
-      
+
       // Guardar el nuevo archivo con timestamp para evitar duplicados
       const timestamp = new Date().toISOString().split('T')[0];
       const newFilename = `naves_${timestamp}.csv`;
@@ -117,14 +117,14 @@ class CSVService {
       for (const file of files) {
         const filePath = path.join(this.dataDir, file.name);
         const content = await fs.readFile(filePath, 'utf8');
-        
+
         try {
           const records = csv.parse(content, {
             columns: true,
             skip_empty_lines: true,
             trim: true
           });
-          
+
           allRecords = allRecords.concat(records);
         } catch (parseError) {
           console.error(`Error parseando archivo ${file.name}:`, parseError);
@@ -141,10 +141,10 @@ class CSVService {
   async searchInCSV(query) {
     try {
       const records = await this.getAllRecords();
-      
+
       // Normalizar la consulta
       const normalizedQuery = query.toLowerCase().trim();
-      
+
       // Buscar en todos los campos
       const results = records.filter(record => {
         return Object.values(record).some(value => {
@@ -154,8 +154,8 @@ class CSVService {
       });
 
       // Si hay resultados exactos por parque industrial, priorizar esos
-      const exactMatches = results.filter(r => 
-        r['Parque Industrial'] && 
+      const exactMatches = results.filter(r =>
+        r['Parque Industrial'] &&
         r['Parque Industrial'].toLowerCase() === normalizedQuery
       );
 
@@ -174,7 +174,7 @@ class CSVService {
     try {
       const records = await this.getAllRecords();
       const normalizedValue = value.toLowerCase().trim();
-      
+
       return records.filter(record => {
         const fieldValue = record[fieldName];
         if (!fieldValue) return false;
@@ -190,12 +190,12 @@ class CSVService {
     try {
       const files = await fs.readdir(this.dataDir);
       const csvFiles = files.filter(f => f.endsWith('.csv'));
-      
+
       const fileDetails = await Promise.all(
         csvFiles.map(async (filename) => {
           const filePath = path.join(this.dataDir, filename);
           const stats = await fs.stat(filePath);
-          
+
           // Contar registros
           let records = 0;
           try {
@@ -208,7 +208,7 @@ class CSVService {
           } catch (e) {
             console.error(`Error contando registros en ${filename}:`, e);
           }
-          
+
           return {
             name: filename,
             uploadDate: stats.mtime,
@@ -217,7 +217,7 @@ class CSVService {
           };
         })
       );
-      
+
       return fileDetails.sort((a, b) => b.uploadDate - a.uploadDate);
     } catch (error) {
       console.error('Error listando archivos CSV:', error);
@@ -238,7 +238,7 @@ class CSVService {
 
   formatRecordForDisplay(record) {
     let formatted = [];
-    
+
     if (record['Parque Industrial']) {
       formatted.push(`📍 Parque Industrial: ${record['Parque Industrial']}`);
     }
@@ -255,17 +255,25 @@ class CSVService {
       formatted.push(`📏 Dimensiones: ${record['Ancho']}m x ${record['Largo']}m`);
     }
     if (record['Precio']) {
-      const precio = parseFloat(record['Precio']);
+      // Preservar el precio exacto del CSV sin redondeo
+      const precioString = String(record['Precio']).replace(/,/g, '');
+      const precio = parseFloat(precioString);
+
+      // Determinar si el precio tiene decimales
+      const tieneDecimales = precioString.includes('.');
+      const decimales = tieneDecimales ? (precioString.split('.')[1] || '').length : 0;
+
       const precioFormateado = precio.toLocaleString('es-MX', {
         style: 'currency',
         currency: 'MXN',
-        minimumFractionDigits: 0
+        minimumFractionDigits: decimales,
+        maximumFractionDigits: decimales
       });
       formatted.push(`💰 Precio: ${precioFormateado}`);
     }
     if (record['Estado']) {
-      const emoji = record['Estado'].toLowerCase() === 'disponible' ? '✅' : 
-                    record['Estado'].toLowerCase() === 'sold out' ? '❌' : '⏳';
+      const emoji = record['Estado'].toLowerCase() === 'disponible' ? '✅' :
+        record['Estado'].toLowerCase() === 'sold out' ? '❌' : '⏳';
       formatted.push(`${emoji} Estado: ${record['Estado']}`);
     }
     if (record['Información Extra']) {
@@ -274,7 +282,7 @@ class CSVService {
     if (record['Ventajas Estratégicas']) {
       formatted.push(`🎯 Ventajas estratégicas: ${record['Ventajas Estratégicas']}`);
     }
-    
+
     return formatted.join('\n');
   }
 }
