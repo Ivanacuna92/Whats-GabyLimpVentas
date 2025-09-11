@@ -165,8 +165,8 @@ class WhatsAppBot {
             ...(await sessionManager.getMessages(userId, chatId))
         ];
         
-        // Generar respuesta con IA (pasar el número del contacto)
-        const aiResponse = await aiService.generateResponse(messages, remoteJid);
+        // Generar respuesta con IA
+        const aiResponse = await aiService.generateResponse(messages);
         
         // Verificar si la respuesta contiene el marcador de activar soporte
         if (aiResponse.includes('{{ACTIVAR_SOPORTE}}')) {
