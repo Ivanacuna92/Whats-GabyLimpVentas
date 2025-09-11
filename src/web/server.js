@@ -97,53 +97,206 @@ class WebServer {
                 <!DOCTYPE html>
                 <html>
                 <head>
-                    <title>WhatsApp QR Code</title>
+                    <title>WhatsApp QR - Navetec</title>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
                     <style>
-                        body {
-                            font-family: Arial, sans-serif;
-                            display: flex;
-                            justify-content: center;
-                            align-items: center;
-                            height: 100vh;
+                        * {
                             margin: 0;
-                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                            padding: 0;
+                            box-sizing: border-box;
                         }
+                        
+                        body {
+                            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                            min-height: 100vh;
+                            background-color: #f9fafb;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            padding: 1rem;
+                        }
+                        
                         .container {
                             background: white;
-                            padding: 2rem;
-                            border-radius: 10px;
-                            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+                            padding: 3rem 2rem;
+                            border-radius: 0.5rem;
+                            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
                             text-align: center;
+                            max-width: 28rem;
+                            width: 100%;
                         }
-                        h1 { color: #333; margin-bottom: 1rem; }
-                        #qrcode { margin: 20px auto; }
-                        #status { 
-                            padding: 10px; 
-                            border-radius: 5px; 
-                            margin-top: 10px;
+                        
+                        .header {
+                            margin-bottom: 2rem;
                         }
-                        .success { background: #4caf50; color: white; }
-                        .waiting { background: #ff9800; color: white; }
-                        .error { background: #f44336; color: white; }
+                        
+                        h1 { 
+                            color: #00567D;
+                            font-size: 1.875rem;
+                            font-weight: 800;
+                            margin-bottom: 0.5rem;
+                        }
+                        
+                        .subtitle {
+                            color: #6b7280;
+                            font-size: 0.875rem;
+                        }
+                        
+                        .qr-container {
+                            background: #f9fafb;
+                            border-radius: 0.5rem;
+                            padding: 1.5rem;
+                            margin: 1.5rem 0;
+                            min-height: 300px;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                        }
+                        
+                        #qrcode {
+                            display: inline-block;
+                        }
+                        
+                        #qrcode canvas {
+                            border-radius: 0.375rem;
+                        }
+                        
+                        #status {
+                            padding: 0.75rem 1rem;
+                            border-radius: 0.375rem;
+                            font-size: 0.875rem;
+                            margin: 1rem 0;
+                            font-weight: 500;
+                        }
+                        
+                        .success {
+                            background-color: #dcfce7;
+                            color: #166534;
+                            border: 1px solid #86efac;
+                        }
+                        
+                        .waiting {
+                            background-color: #fef3c7;
+                            color: #92400e;
+                            border: 1px solid #fcd34d;
+                        }
+                        
+                        .error {
+                            background-color: #fee2e2;
+                            color: #991b1b;
+                            border: 1px solid #fca5a5;
+                        }
+                        
+                        .btn-reset {
+                            width: 100%;
+                            padding: 0.5rem 1rem;
+                            background-color: #00567D;
+                            color: white;
+                            border: none;
+                            border-radius: 0.375rem;
+                            font-size: 0.875rem;
+                            font-weight: 500;
+                            cursor: pointer;
+                            transition: background-color 0.2s;
+                            display: inline-flex;
+                            align-items: center;
+                            justify-content: center;
+                            gap: 0.5rem;
+                        }
+                        
+                        .btn-reset:hover:not(:disabled) {
+                            background-color: #002B53;
+                        }
+                        
+                        .btn-reset:disabled {
+                            opacity: 0.5;
+                            cursor: not-allowed;
+                        }
+                        
+                        .spinner {
+                            display: inline-block;
+                            width: 1rem;
+                            height: 1rem;
+                            border: 2px solid transparent;
+                            border-top-color: currentColor;
+                            border-radius: 50%;
+                            animation: spin 0.6s linear infinite;
+                        }
+                        
+                        @keyframes spin {
+                            to { transform: rotate(360deg); }
+                        }
+                        
+                        .info-text {
+                            margin-top: 1.5rem;
+                            padding-top: 1.5rem;
+                            border-top: 1px solid #e5e7eb;
+                            font-size: 0.75rem;
+                            color: #6b7280;
+                            line-height: 1.5;
+                        }
+                        
+                        .loading-placeholder {
+                            width: 256px;
+                            height: 256px;
+                            background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+                            background-size: 200% 100%;
+                            animation: loading 1.5s infinite;
+                            border-radius: 0.375rem;
+                        }
+                        
+                        @keyframes loading {
+                            0% { background-position: 200% 0; }
+                            100% { background-position: -200% 0; }
+                        }
                     </style>
                     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
                 </head>
                 <body>
                     <div class="container">
-                        <h1>WhatsApp QR Code</h1>
-                        <div id="qrcode"></div>
+                        <div class="header">
+                            <h1>Navetec WhatsApp</h1>
+                            <p class="subtitle">Escanea el código QR para conectar</p>
+                        </div>
+                        
+                        <div class="qr-container">
+                            <div id="qrcode">
+                                <div class="loading-placeholder"></div>
+                            </div>
+                        </div>
+                        
                         <div id="status" class="waiting">Cargando código QR...</div>
-                        <button onclick="resetSession()" style="margin-top: 20px; padding: 10px 20px; background: #ff4444; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px;">
-                            🔄 Reiniciar Sesión
+                        
+                        <button onclick="resetSession()" class="btn-reset" id="resetBtn">
+                            <span id="resetBtnText">Reiniciar Sesión</span>
                         </button>
+                        
+                        <div class="info-text">
+                            <strong>Instrucciones:</strong><br>
+                            1. Abre WhatsApp en tu teléfono<br>
+                            2. Ve a Configuración → Dispositivos vinculados<br>
+                            3. Toca "Vincular dispositivo"<br>
+                            4. Escanea este código QR
+                        </div>
                     </div>
                     
                     <script>
                         let qrcode = null;
+                        let isResetting = false;
                         
                         async function resetSession() {
+                            if (isResetting) return;
+                            
                             if (confirm('¿Estás seguro de que quieres reiniciar la sesión de WhatsApp?')) {
+                                isResetting = true;
+                                const btn = document.getElementById('resetBtn');
+                                const btnText = document.getElementById('resetBtnText');
+                                
                                 try {
+                                    btn.disabled = true;
+                                    btnText.innerHTML = '<span class="spinner"></span> Reiniciando...';
+                                    
                                     const response = await fetch('/api/logout', { method: 'POST' });
                                     const data = await response.json();
                                     
@@ -160,6 +313,10 @@ class WebServer {
                                 } catch (error) {
                                     document.getElementById('status').textContent = 'Error: ' + error.message;
                                     document.getElementById('status').className = 'error';
+                                } finally {
+                                    btn.disabled = false;
+                                    btnText.textContent = 'Reiniciar Sesión';
+                                    isResetting = false;
                                 }
                             }
                         }
@@ -176,14 +333,24 @@ class WebServer {
                                     statusEl.textContent = 'Escanea el código con WhatsApp';
                                     statusEl.className = 'waiting';
                                     
+                                    // Limpiar placeholder si existe
+                                    const placeholder = qrEl.querySelector('.loading-placeholder');
+                                    if (placeholder) {
+                                        placeholder.remove();
+                                    }
+                                    
                                     if (qrcode) {
                                         qrcode.clear();
                                         qrcode.makeCode(data.qr);
                                     } else {
+                                        qrEl.innerHTML = '';
                                         qrcode = new QRCode(qrEl, {
                                             text: data.qr,
                                             width: 256,
-                                            height: 256
+                                            height: 256,
+                                            colorDark: "#000000",
+                                            colorLight: "#ffffff",
+                                            correctLevel: QRCode.CorrectLevel.M
                                         });
                                     }
                                 } else {
@@ -191,12 +358,12 @@ class WebServer {
                                         qrcode.clear();
                                         qrcode = null;
                                     }
-                                    qrEl.innerHTML = '';
-                                    statusEl.textContent = data.message || 'Bot conectado o reiniciándose';
+                                    qrEl.innerHTML = '<div style="padding: 2rem; color: #10b981;">✓ Conectado exitosamente</div>';
+                                    statusEl.textContent = data.message || 'Bot conectado exitosamente';
                                     statusEl.className = 'success';
                                 }
                             } catch (error) {
-                                document.getElementById('status').textContent = 'Error: ' + error.message;
+                                document.getElementById('status').textContent = 'Error de conexión: ' + error.message;
                                 document.getElementById('status').className = 'error';
                             }
                         }

@@ -1,5 +1,5 @@
 const makeWASocket = require('baileys').default;
-const { DisconnectReason, useMultiFileAuthState, makeCacheableSignalKeyStore, Browsers } = require('baileys');
+const { DisconnectReason, useMultiFileAuthState, makeCacheableSignalKeyStore } = require('baileys');
 const qrcode = require('qrcode-terminal');
 const pino = require('pino');
 const config = require('../config/config');
@@ -26,7 +26,7 @@ class WhatsAppBot {
         // Configurar autenticación multi-archivo
         const { state, saveCreds } = await useMultiFileAuthState('./auth_baileys');
         
-        // Crear socket de WhatsApp
+        // Crear socket de WhatsApp con configuración mejorada para producción
         this.sock = makeWASocket({
             auth: {
                 creds: state.creds,
@@ -34,7 +34,17 @@ class WhatsAppBot {
             },
             printQRInTerminal: false,
             logger: pino({ level: 'silent' }),
-            browser: Browsers.macOS('Google Chrome')
+            browser: ['Chrome (Linux)', 'Chrome', '131.0.0.0'],
+            generateHighQualityLinkPreview: false,
+            syncFullHistory: false,
+            fireInitQueries: false,
+            emitOwnEvents: false,
+            defaultQueryTimeoutMs: 60000,
+            connectTimeoutMs: 60000,
+            keepAliveIntervalMs: 10000,
+            qrTimeout: 40000,
+            markOnlineOnConnect: true,
+            retryRequestDelayMs: 2000
         });
         
         // Guardar credenciales cuando se actualicen
