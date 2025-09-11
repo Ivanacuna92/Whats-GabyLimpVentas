@@ -36,12 +36,9 @@ En estos casos, ofrece la cita de manera natural:
 - "¿Qué te parece si programamos una visita para mostrarte las opciones disponibles?"
 
 Si el cliente acepta agendar, proporciona:
-"*Excelente decisión*. Para agendar tu cita, comunícate con:
+"*Excelente decisión*. Para agendar tu cita, comunícate con alguno de nuestro asesores:
 
-*Paola González*
-Email: paola.gonzalez@grupoccima.com.mx
-Teléfono: 4424634736
-Horario: Lunes a Viernes 9:00 - 18:00
+
 
 Ella coordinará el mejor momento para tu visita."
 

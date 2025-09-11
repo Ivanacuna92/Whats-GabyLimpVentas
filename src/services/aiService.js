@@ -1,6 +1,7 @@
 const axios = require('axios');
 const config = require('../config/config');
 const csvService = require('./csvService');
+const advisorAssignmentService = require('./advisorAssignmentService');
 
 class AIService {
     constructor() {
@@ -8,10 +9,10 @@ class AIService {
         this.apiUrl = config.deepseekApiUrl;
     }
 
-    async generateResponse(messages) {
+    async generateResponse(messages, contactNumber) {
         try {
             // Incluir datos de CSV en el prompt del sistema
-            const enrichedMessages = await this.addCSVDataToSystemPrompt(messages);
+            const enrichedMessages = await this.addCSVDataToSystemPrompt(messages, contactNumber);
             
             const response = await axios.post(this.apiUrl, {
                 model: 'deepseek-chat',
@@ -37,7 +38,7 @@ class AIService {
         }
     }
 
-    async addCSVDataToSystemPrompt(messages) {
+    async addCSVDataToSystemPrompt(messages, contactNumber) {
         try {
             // Obtener todos los datos de CSV
             const allRecords = await csvService.getAllRecords();
@@ -51,12 +52,21 @@ class AIService {
                 csvService.formatRecordForDisplay(record)
             ).join('\n\n---\n\n');
             
-            // Agregar CSV data al mensaje del sistema
+            // Obtener el asesor asignado para este contacto
+            const assignedAdvisor = this.getOrAssignAdvisor(contactNumber);
+            
+            // Agregar CSV data y asesor al mensaje del sistema
             const enrichedMessages = [...messages];
             const systemMessage = enrichedMessages.find(m => m.role === 'system');
             
             if (systemMessage) {
-                systemMessage.content = systemMessage.content + `\n\n*BASE DE DATOS DE NAVES DISPONIBLES:*\n\n${csvData}\n\nUsa esta información cuando el usuario pregunte sobre naves, parques industriales, precios, disponibilidad o cualquier tema relacionado. Si el usuario pregunta por algo específico que está en esta base de datos, úsala para responder de manera precisa y actualizada.`;
+                systemMessage.content = systemMessage.content + 
+                    `\n\n*BASE DE DATOS DE NAVES DISPONIBLES:*\n\n${csvData}\n\n` +
+                    `Usa esta información cuando el usuario pregunte sobre naves, parques industriales, precios, disponibilidad o cualquier tema relacionado. Si el usuario pregunta por algo específico que está en esta base de datos, úsala para responder de manera precisa y actualizada.\n\n` +
+                    `*ASESOR ASIGNADO PARA ESTE CLIENTE:*\n` +
+                    `Nombre: ${assignedAdvisor.name}\n` +
+                    `Teléfono: ${assignedAdvisor.phone}\n\n` +
+                    `IMPORTANTE: Cuando el cliente confirme interés o quiera seguir adelante con información sobre alguna nave, debes proporcionar ÚNICAMENTE los datos de contacto del asesor asignado arriba (${assignedAdvisor.name}), NO los de Paola González ni ningún otro asesor.`;
             }
             
             return enrichedMessages;
@@ -64,6 +74,11 @@ class AIService {
             console.error('Error agregando datos CSV al prompt:', error);
             return messages;
         }
+    }
+
+    getOrAssignAdvisor(contactNumber) {
+        // Usar el servicio centralizado que persiste las asignaciones
+        return advisorAssignmentService.getOrAssignAdvisor(contactNumber);
     }
 }
 
