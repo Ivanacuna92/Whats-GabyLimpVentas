@@ -1,5 +1,5 @@
 const makeWASocket = require('baileys').default;
-const { DisconnectReason, useMultiFileAuthState, makeCacheableSignalKeyStore } = require('baileys');
+const { DisconnectReason, useMultiFileAuthState, makeCacheableSignalKeyStore, fetchLatestBaileysVersion, makeInMemoryStore } = require('baileys');
 const qrcode = require('qrcode-terminal');
 const pino = require('pino');
 const config = require('../config/config');
@@ -17,35 +17,66 @@ class WhatsAppBot {
         this.currentQR = null;
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 3;
+        this.isReconnecting = false;
     }
 
     async start() {
+        if (this.isReconnecting) {
+            console.log('Ya hay un intento de reconexión en progreso...');
+            return;
+        }
+        
+        this.isReconnecting = true;
         console.log('Iniciando bot de WhatsApp con Baileys...');
         config.validateApiKey();
         
-        // Configurar autenticación multi-archivo
-        const { state, saveCreds } = await useMultiFileAuthState('./auth_baileys');
-        
-        // Crear socket de WhatsApp con configuración mejorada para producción
-        this.sock = makeWASocket({
-            auth: {
-                creds: state.creds,
-                keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
-            },
-            printQRInTerminal: false,
-            logger: pino({ level: 'silent' }),
-            browser: ['Chrome (Linux)', 'Chrome', '131.0.0.0'],
-            generateHighQualityLinkPreview: false,
-            syncFullHistory: false,
-            fireInitQueries: false,
-            emitOwnEvents: false,
-            defaultQueryTimeoutMs: 60000,
-            connectTimeoutMs: 60000,
-            keepAliveIntervalMs: 10000,
-            qrTimeout: 40000,
-            markOnlineOnConnect: true,
-            retryRequestDelayMs: 2000
-        });
+        try {
+            // Configurar autenticación multi-archivo
+            const { state, saveCreds } = await useMultiFileAuthState('./auth_baileys');
+            
+            // Obtener versión más reciente de Baileys
+            const { version, isLatest } = await fetchLatestBaileysVersion();
+            console.log(`Usando versión de WhatsApp Web: ${version.join('.')} (última: ${isLatest})`);
+            
+            // Crear store en memoria para manejar mensajes
+            this.store = makeInMemoryStore({ 
+                logger: pino({ level: 'silent' }) 
+            });
+            
+            // Crear socket de WhatsApp con configuración mejorada para producción
+            this.sock = makeWASocket({
+                version,
+                auth: {
+                    creds: state.creds,
+                    keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
+                },
+                printQRInTerminal: false,
+                logger: pino({ level: 'silent' }),
+                browser: ['Chrome (Linux)', '', ''],
+                generateHighQualityLinkPreview: false,
+                syncFullHistory: false,
+                getMessage: async (key) => {
+                    if (this.store) {
+                        const msg = await this.store.loadMessage(key.remoteJid, key.id);
+                        return msg?.message || undefined;
+                    }
+                    return { conversation: 'No disponible' };
+                },
+                defaultQueryTimeoutMs: undefined,
+                connectTimeoutMs: 60000,
+                keepAliveIntervalMs: 30000,
+                qrTimeout: undefined,
+                markOnlineOnConnect: false,
+                msgRetryCounterCache: {},
+                retryRequestDelayMs: 250,
+                maxMsgRetryCount: 5,
+                auth: state
+            });
+            
+            // Vincular store al socket
+            if (this.store) {
+                this.store.bind(this.sock.ev);
+            }
         
         // Guardar credenciales cuando se actualicen
         this.sock.ev.on('creds.update', saveCreds);
@@ -66,42 +97,48 @@ class WhatsAppBot {
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
                 console.log('Conexión cerrada debido a', lastDisconnect?.error, ', reconectando:', shouldReconnect);
                 
-                // Si es error 405, limpiar sesión y reiniciar con límite
-                if (statusCode === 405) {
+                // Si es error 405 o 401, limpiar sesión y reiniciar con límite
+                if (statusCode === 405 || statusCode === 401 || statusCode === 403) {
                     this.reconnectAttempts++;
                     
                     if (this.reconnectAttempts > this.maxReconnectAttempts) {
                         console.log('❌ Máximo de intentos de reconexión alcanzado. Por favor usa el botón de reiniciar sesión en /qr');
+                        this.isReconnecting = false;
                         return;
                     }
                     
-                    console.log(`Error 405 detectado. Intento ${this.reconnectAttempts}/${this.maxReconnectAttempts}. Limpiando sesión...`);
-                    const fs = require('fs');
-                    const path = require('path');
-                    const authPath = path.join(process.cwd(), 'auth_baileys');
+                    console.log(`Error ${statusCode} detectado. Intento ${this.reconnectAttempts}/${this.maxReconnectAttempts}. Limpiando sesión...`);
+                    this.clearSession();
                     
-                    try {
-                        if (fs.existsSync(authPath)) {
-                            fs.rmSync(authPath, { recursive: true, force: true });
-                            console.log('Sesión eliminada. Reiniciando...');
-                        }
-                    } catch (err) {
-                        console.log('Error limpiando sesión:', err);
-                    }
-                    
-                    setTimeout(() => this.start(), 3000);
-                } else if (shouldReconnect) {
-                    this.reconnectAttempts = 0; // Reset counter on other errors
+                    this.isReconnecting = false;
                     setTimeout(() => this.start(), 5000);
+                } else if (shouldReconnect && statusCode !== DisconnectReason.loggedOut) {
+                    this.reconnectAttempts = 0;
+                    this.isReconnecting = false;
+                    setTimeout(() => this.start(), 5000);
+                } else {
+                    this.isReconnecting = false;
                 }
             } else if (connection === 'open') {
                 console.log('¡Bot de WhatsApp conectado y listo!');
-                this.currentQR = null; // Limpiar QR al conectar
-                this.reconnectAttempts = 0; // Reset counter on successful connection
+                this.currentQR = null;
+                this.reconnectAttempts = 0;
+                this.isReconnecting = false;
                 logger.log('SYSTEM', 'Bot iniciado correctamente con Baileys');
                 sessionManager.startCleanupTimer(this.sock);
             }
         });
+        
+        } catch (error) {
+            console.error('Error iniciando bot:', error);
+            this.isReconnecting = false;
+            
+            if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                this.reconnectAttempts++;
+                console.log(`Reintentando en 5 segundos... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+                setTimeout(() => this.start(), 5000);
+            }
+        }
         
         // Manejar mensajes entrantes
         this.sock.ev.on('messages.upsert', async (m) => {
@@ -229,26 +266,34 @@ class WhatsAppBot {
         }
     }
     
+    async clearSession() {
+        const fs = require('fs').promises;
+        const path = require('path');
+        const authPath = path.join(process.cwd(), 'auth_baileys');
+        
+        try {
+            await fs.rm(authPath, { recursive: true, force: true });
+            console.log('Sesión eliminada correctamente');
+        } catch (err) {
+            console.log('No había sesión previa o ya fue eliminada');
+        }
+    }
+    
     async logout() {
         console.log('Cerrando sesión de WhatsApp...');
         try {
-            // Reset reconnect counter
             this.reconnectAttempts = 0;
+            this.isReconnecting = false;
             
             if (this.sock) {
-                await this.sock.logout();
+                try {
+                    await this.sock.logout();
+                } catch (err) {
+                    console.log('Error al hacer logout:', err.message);
+                }
             }
-            // Limpiar archivos de autenticación
-            const fs = require('fs').promises;
-            const path = require('path');
-            const authPath = path.join(process.cwd(), 'auth_baileys');
             
-            try {
-                await fs.rm(authPath, { recursive: true, force: true });
-                console.log('Sesión eliminada correctamente');
-            } catch (err) {
-                console.log('No había sesión previa o ya fue eliminada');
-            }
+            await this.clearSession();
             
             // Reiniciar el bot para generar nuevo QR
             setTimeout(() => this.start(), 2000);
