@@ -46,7 +46,7 @@ Si el cliente acepta agendar o muestra interés en un producto específico:
 2. RESPONDE con el asesor asignado:
 "*Excelente decisión*. Te he asignado a *[NOMBRE DEL ASESOR SELECCIONADO]* como tu asesor personal.
 
-Para coordinar tu cita, comunícate también con tu asesor asignado.
+Para coordinar tu cita, comunícate con el.
 
 IMPORTANTE: Selecciona el asesor de forma aleatoria cada vez que un cliente acepte agendar o muestre interés en un producto.
 
