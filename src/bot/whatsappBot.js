@@ -1,5 +1,5 @@
 const makeWASocket = require('baileys').default;
-const { DisconnectReason, useMultiFileAuthState, makeCacheableSignalKeyStore, fetchLatestBaileysVersion, makeInMemoryStore } = require('baileys');
+const { DisconnectReason, useMultiFileAuthState, makeCacheableSignalKeyStore, fetchLatestBaileysVersion } = require('baileys');
 const qrcode = require('qrcode-terminal');
 const pino = require('pino');
 const config = require('../config/config');
@@ -13,7 +13,6 @@ class WhatsAppBot {
     constructor() {
         this.sock = null;
         this.systemPrompt = promptLoader.getPrompt();
-        this.store = null;
         this.currentQR = null;
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 3;
@@ -38,10 +37,7 @@ class WhatsAppBot {
             const { version, isLatest } = await fetchLatestBaileysVersion();
             console.log(`Usando versión de WhatsApp Web: ${version.join('.')} (última: ${isLatest})`);
             
-            // Crear store en memoria para manejar mensajes
-            this.store = makeInMemoryStore({ 
-                logger: pino({ level: 'silent' }) 
-            });
+            // Store no es necesario en baileys v6
             
             // Crear socket de WhatsApp con configuración mejorada para producción
             this.sock = makeWASocket({
@@ -55,11 +51,7 @@ class WhatsAppBot {
                 browser: ['Chrome (Linux)', '', ''],
                 generateHighQualityLinkPreview: false,
                 syncFullHistory: false,
-                getMessage: async (key) => {
-                    if (this.store) {
-                        const msg = await this.store.loadMessage(key.remoteJid, key.id);
-                        return msg?.message || undefined;
-                    }
+                getMessage: async () => {
                     return { conversation: 'No disponible' };
                 },
                 defaultQueryTimeoutMs: undefined,
@@ -73,10 +65,6 @@ class WhatsAppBot {
                 auth: state
             });
             
-            // Vincular store al socket
-            if (this.store) {
-                this.store.bind(this.sock.ev);
-            }
         
         // Guardar credenciales cuando se actualicen
         this.sock.ev.on('creds.update', saveCreds);

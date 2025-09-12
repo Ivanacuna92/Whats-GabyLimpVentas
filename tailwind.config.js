@@ -8,9 +8,9 @@ module.exports = {
     extend: {
       colors: {
         'navetec': {
-          'primary': '#00567D',
+          'primary': '#',
           'primary-dark': '#002B53',
-          'primary-medium': '#002D74',
+          'primary-medium': '#AE3A8D',
           'primary-light': '#1F49B6',
           'secondary-1': '#425CC7',
           'secondary-2': '#87A9E2',
