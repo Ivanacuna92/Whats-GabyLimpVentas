@@ -98,9 +98,9 @@ function ContactsList({ contacts, setContacts, selectedContact, onSelectContact 
               }`}
               style={{
                 borderLeftColor: contact.mode === 'support' 
-                  ? '#EA580C'
+                  ? '#AE3A8D'
                   : selectedContact?.phone === contact.phone 
-                    ? '#00567D'
+                    ? '#AE3A8D'
                     : 'transparent',
                 borderLeftWidth: contact.mode === 'support' ? '4px' : selectedContact?.phone === contact.phone ? '4px' : '0'
               }}
@@ -110,7 +110,7 @@ function ContactsList({ contacts, setContacts, selectedContact, onSelectContact 
                 <div 
                   className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm"
                   style={{ 
-                    backgroundColor: contact.mode === 'support' ? '#EA580C' : '#00567D' 
+                    backgroundColor: contact.mode === 'support' ? '#AE3A8D' : '#AE3A8D' 
                   }}
                 >
                   {contact.mode === 'support' ? '👤' : contact.phone.slice(-2)}
@@ -138,12 +138,12 @@ function ContactsList({ contacts, setContacts, selectedContact, onSelectContact 
                 className="px-3 py-1 rounded-md text-xs font-medium transition-all"
                 style={{
                   backgroundColor: contact.mode === 'support' 
-                    ? '#EA580C' 
+                    ? '#AE3A8D' 
                     : contact.isHumanMode 
-                      ? '#00567D' 
+                      ? '#AE3A8D' 
                       : 'white',
-                  color: contact.mode === 'support' || contact.isHumanMode ? 'white' : '#00567D',
-                  border: contact.mode === 'support' || contact.isHumanMode ? 'none' : '1px solid #00567D'
+                  color: contact.mode === 'support' || contact.isHumanMode ? 'white' : '#CCB6B6',
+                  border: contact.mode === 'support' || contact.isHumanMode ? 'none' : '1px solid #CCB6B6'
                 }}
                 onClick={(e) => {
                   e.stopPropagation();

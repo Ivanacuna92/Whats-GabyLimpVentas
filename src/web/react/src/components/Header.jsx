@@ -1,11 +1,12 @@
 import React from 'react';
 import logo from '../assets/logo.svg';
+import icono from '../assets/icono.jpeg'
 
 function Header({ currentView, onViewChange, user, onLogout }) {
   return (
     <header className="bg-white border-b border-gray-200 px-8 py-4">
       <div className="flex justify-between items-center">
-        <img src={logo} alt="Navetec" className="h-10" />
+        <img src={icono} alt="Navetec" className="h-10" />
         <nav className="flex gap-1">
           {user?.role === 'admin' && (
             <button 
@@ -39,18 +40,7 @@ function Header({ currentView, onViewChange, user, onLogout }) {
           >
             Contactos
           </button>
-          {user?.role === 'admin' && (
-            <button 
-              className={`px-8 py-2 rounded-md font-medium transition-all ${
-                currentView === 'naves' 
-                  ? 'bg-navetec-primary text-white' 
-                  : 'text-gray-600 hover:text-navetec-primary'
-              }`}
-              onClick={() => onViewChange('naves')}
-            >
-              Naves
-            </button>
-          )}
+         
         </nav>
         
         {user && (

@@ -3,7 +3,6 @@ import ContactsList from './components/ContactsList';
 import ChatPanel from './components/ChatPanel';
 import Dashboard from './components/Dashboard';
 import Reports from './components/Reports';
-import NavesUpload from './components/NavesUpload';
 import Header from './components/Header';
 import Login from './components/Login';
 import { checkAuth, logout } from './services/api';
@@ -132,8 +131,6 @@ function App() {
         <Dashboard />
       ) : currentView === 'reports' ? (
         <Reports />
-      ) : currentView === 'naves' ? (
-        <NavesUpload />
       ) : (
         <div className="flex flex-1 overflow-hidden">
           <ContactsList 
