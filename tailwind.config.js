@@ -7,22 +7,22 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        'navetec': {
-          'primary': '#AE3A8D',
-          'primary-dark': '#FD3244',
-          'primary-medium': '#AE3A8D',
-          'primary-light': '#AE3A8D',
-          'secondary-1': '#AE3A8D',
-          'secondary-2': '#AE3A8D',
-          'secondary-3': '#AE3A8D',
-          'secondary-4': '#AE3A8D',
-        }
+        navetec: {
+          primary: "#0B7239",
+          "primary-dark": "#47B8B7",
+          "primary-medium": "#73B191",
+          "primary-light": "#47B8B7",
+          "secondary-1": "#73B191",
+          "secondary-2": "#73B191",
+          "secondary-3": "#73B191",
+          "secondary-4": "#73B191",
+        },
       },
       fontFamily: {
-        'merriweather': ['Merriweather Sans', 'sans-serif'],
-        'futura': ['Futura PT', 'Segoe UI', 'sans-serif'],
+        merriweather: ["Merriweather Sans", "sans-serif"],
+        futura: ["Futura PT", "Segoe UI", "sans-serif"],
       },
     },
   },
   plugins: [],
-}
+};
