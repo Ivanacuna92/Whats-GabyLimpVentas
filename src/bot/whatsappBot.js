@@ -8,6 +8,7 @@ const aiService = require('../services/aiService');
 const sessionManager = require('../services/sessionManager');
 const promptLoader = require('../services/promptLoader');
 const humanModeManager = require('../services/humanModeManager');
+const locationValidator = require('../services/locationValidator');
 
 class WhatsAppBot {
     constructor() {
@@ -177,9 +178,21 @@ class WhatsAppBot {
                     return;
                 }
                 
+                // Validar ubicación si el mensaje contiene información de ubicación
+                const locationValidation = locationValidator.validateMessageLocation(conversation);
+
+                if (locationValidation.invalidLocations.length > 0) {
+                    // Se detectó una ubicación inválida
+                    const rejectionMessage = locationValidator.getLocationRejectionMessage(userName);
+                    await this.sock.sendMessage(from, { text: rejectionMessage });
+                    await logger.log('bot', rejectionMessage, userId, userName);
+                    await logger.log('SYSTEM', `Ubicación rechazada para ${userName} (${userId}): ${locationValidation.invalidLocations.join(', ')} en mensaje: ${conversation}`);
+                    return;
+                }
+
                 // Procesar mensaje y generar respuesta
-                const response = await this.processMessage(userId, conversation, from);
-                
+                const response = await this.processMessage(userId, conversation, from, locationValidation);
+
                 // Enviar respuesta
                 await this.sock.sendMessage(from, { text: response });
                 await logger.log('bot', response, userId, userName);
@@ -190,13 +203,20 @@ class WhatsAppBot {
         });
     }
     
-    async processMessage(userId, userMessage, chatId) {
+    async processMessage(userId, userMessage, chatId, locationValidation = null) {
         // Agregar mensaje del usuario a la sesión
         await sessionManager.addMessage(userId, 'user', userMessage, chatId);
         
         // Preparar mensajes para la IA
+        let systemPrompt = this.systemPrompt;
+
+        // Si se encontraron ubicaciones válidas, añadir contexto al prompt
+        if (locationValidation && locationValidation.isValid && locationValidation.foundLocations.length > 0) {
+            systemPrompt += `\n\nNOTA: El usuario ha mencionado una ubicación válida: ${locationValidation.foundLocations.join(', ')}. Esta ubicación está dentro del área metropolitana de CDMX y es operable para nuestros servicios.`;
+        }
+
         const messages = [
-            { role: 'system', content: this.systemPrompt },
+            { role: 'system', content: systemPrompt },
             ...(await sessionManager.getMessages(userId, chatId))
         ];
         
