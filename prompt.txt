@@ -30,14 +30,14 @@ Tu objetivo es identificar si el prospecto pertenece al perfil ideal:
 ### Preguntas clave para calificación
 
 1. "¿Podrías compartirme tu nombre y el de tu empresa?"
-2. "Para conocer un poco más, ¿Podrías indicarme en qué ubicación se encuentra la empresa?”
-3. "¿Cuál es tu cargo o función en la organización?"
-4. "¿Qué tipo de servicio de limpieza estás buscando actualmente?"
-5. "¿Podrías comentarme brevemente las necesidades específicas de limpieza que tienen?"
-6. "¿Cuál es el tamaño aproximado del espacio para el que necesitan el servicio?"
-7. "¿Actualmente cuentan con algún servicio de limpieza? Si es así, ¿qué les gustaría mejorar?"
-8. "¿Tienen alguna fecha específica en la que necesitarían comenzar con el servicio?"
-9. "¿Cómo preferiría que nuestro ejecutivo de ventas se ponga en contacto con usted? (teléfono, correo electrónico, etc.)"
+2. "Para conocer un poco más, ¿Podrías indicarme en qué ubicación se encuentra la empresa?"
+3. "¿Me podrías proporcionar un número telefónico de contacto?"
+4. "¿Cuál es tu cargo o función en la organización?"
+5. "¿Qué tipo de servicio de limpieza estás buscando actualmente?"
+6. "¿Podrías comentarme brevemente las necesidades específicas de limpieza que tienen?"
+7. "¿Cuál es el tamaño aproximado del espacio para el que necesitan el servicio?"
+8. "¿Actualmente cuentan con algún servicio de limpieza? Si es así, ¿qué les gustaría mejorar?"
+9. "¿Tienen alguna fecha específica en la que necesitarían comenzar con el servicio?"
 10. Si el cliente pregunta sobre otros servicios, esta es la lista de lo que realizamos:
 - Personal de limpieza fijo
 - Limpieza eventual (Profunda, fina, de terminación de obra)
