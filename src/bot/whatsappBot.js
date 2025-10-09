@@ -74,10 +74,9 @@ class WhatsAppBot {
         keepAliveIntervalMs: 30000,
         qrTimeout: undefined,
         markOnlineOnConnect: false,
-        msgRetryCounterCache: {},
+        msgRetryCounterCache: new Map(),
         retryRequestDelayMs: 250,
         maxMsgRetryCount: 5,
-        auth: state,
       });
 
       // Guardar credenciales cuando se actualicen
