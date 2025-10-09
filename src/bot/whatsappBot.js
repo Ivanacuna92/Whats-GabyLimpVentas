@@ -271,10 +271,6 @@ class WhatsAppBot {
       )}. Esta ubicación está dentro del área metropolitana de CDMX y es operable para nuestros servicios.`;
     }
 
-    // Si es el primer mensaje, agregar instrucción para incluir la leyenda de pruebas
-    if (isFirstMessage) {
-      systemPrompt += `\n\n⚠️ IMPORTANTE: Este es el primer mensaje de la conversación. Debes comenzar tu respuesta con el siguiente aviso:\n\n"🤖 *Hola, soy un bot en periodo de pruebas.* Estoy aquí para ayudarte con información sobre los servicios de gabylimp. Ayudanos a mejorar nuestro servicio"\n\nDespués de este aviso, procede normalmente con tu respuesta.`;
-    }
 
     const messages = [
       { role: "system", content: systemPrompt },
